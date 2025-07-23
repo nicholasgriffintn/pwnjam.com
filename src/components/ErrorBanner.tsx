@@ -7,7 +7,7 @@ interface ErrorBannerProps {
 
 const ErrorBanner: FC<ErrorBannerProps> = ({ message, onClose }) => {
   return (
-    <div className="fixed top-0 left-0 right-0 z-50 p-3 m-4 bg-red-100 text-red-700 border border-red-300 rounded-md shadow-lg">
+    <div className="fixed top-0 left-0 right-0 z-50 p-3 m-4 bg-cyber-red-900 text-cyber-red-300 border border-cyber-red-600 rounded-md shadow-lg">
       <div className="flex items-center justify-between">
         <div className="flex items-center">
           <svg 
@@ -28,7 +28,7 @@ const ErrorBanner: FC<ErrorBannerProps> = ({ message, onClose }) => {
         <button 
           type="button" 
           onClick={onClose} 
-          className="text-red-700 hover:text-red-900 focus:outline-none"
+          className="text-cyber-red-300 hover:text-cyber-red-100 focus:outline-none transition-colors"
           aria-label="Close error message"
         >
           <svg

@@ -220,7 +220,7 @@ const App = () => {
   const clearError = () => setError('');
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-cyber-bg">
       {isLoading && <LoadingOverlay />}
 
       {error && screen !== 'room' && (

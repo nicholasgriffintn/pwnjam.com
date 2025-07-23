@@ -40,18 +40,18 @@ const RoomScreen: FC<RoomScreenProps> = ({
     <div className="flex flex-col h-screen">
       {error && <ErrorBanner message={error} onClose={onClearError} />}
 
-      <header className="p-4 bg-gradient-to-r from-teal-600 to-teal-700 text-white shadow-md">
+      <header className="p-4 bg-gradient-to-r from-cyber-surface to-cyber-surface-alt text-cyber-text-primary shadow-md border-b border-cyber-border">
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-2 md:space-x-4">
             <h1 className="text-lg md:text-xl font-bold">{app.name}</h1>
             <div className="flex items-stretch h-7">
-              <div className="px-2 md:px-3 py-1 text-xs md:text-sm bg-teal-800 rounded-l-md truncate max-w-[80px] md:max-w-none flex items-center">
+              <div className="px-2 md:px-3 py-1 text-xs md:text-sm bg-cyber-cyan-500 text-cyber-bg rounded-l-md truncate max-w-[80px] md:max-w-none flex items-center font-mono font-bold">
                 {roomData.key}
               </div>
               <button
                 type="button"
                 onClick={() => setIsShareModalOpen(true)}
-                className="px-2 py-1 bg-teal-700 hover:bg-teal-800 rounded-r-md border-l border-teal-600 flex items-center"
+                className="px-2 py-1 bg-cyber-cyan-600 hover:bg-cyber-cyan-700 rounded-r-md border-l border-cyber-cyan-400 flex items-center transition-colors"
                 title="Share Room"
               >
                 <svg
@@ -74,7 +74,7 @@ const RoomScreen: FC<RoomScreenProps> = ({
             <button
               type="button"
               onClick={onLeaveRoom}
-              className="text-xs md:text-sm px-2 md:px-3 py-1 bg-teal-700 hover:bg-teal-800 rounded-md transition-colors"
+              className="text-xs md:text-sm px-2 md:px-3 py-1 bg-cyber-red-300 hover:bg-cyber-red-400 text-cyber-bg rounded-md transition-colors font-semibold"
               title="Leave Room"
             >
               Leave Room
@@ -83,7 +83,13 @@ const RoomScreen: FC<RoomScreenProps> = ({
 
           <div className="flex items-center space-x-2 md:space-x-4">
             <ConnectionStatus isConnected={isConnected} />
-            <div className="hidden sm:block text-xs md:text-sm px-2 md:px-3 py-1 bg-teal-800 rounded-md">
+            <div
+              className={`hidden sm:block text-xs md:text-sm px-2 md:px-3 py-1 rounded-md font-semibold ${
+                isModeratorView
+                  ? 'bg-cyber-gold-500 text-cyber-bg'
+                  : 'bg-cyber-surface-alt text-cyber-text-secondary'
+              }`}
+            >
               {isModeratorView ? 'Moderator' : 'Team Member'}
             </div>
             {isModeratorView && (
@@ -121,24 +127,34 @@ const RoomScreen: FC<RoomScreenProps> = ({
       </header>
 
       <div className="grid grid-cols-1 md:grid-cols-[30%_70%] flex-1 h-full">
-        <div className="p-4 bg-gray-100 border-b md:border-b-0 md:border-r overflow-y-auto">
-          <h2 className="mb-4 text-lg font-medium">
+        <div className="p-4 bg-cyber-surface border-b border-cyber-border md:border-b-0 md:border-r overflow-y-auto">
+          <h2 className="mb-4 text-lg font-medium text-cyber-text-primary">
             Participants ({roomData.users.length})
           </h2>
           <ul className="space-y-2">
             {roomData.users.map((user: string) => (
               <li
                 key={user}
-                className="flex items-center justify-between p-2 bg-white rounded-md shadow-sm transition-all hover:shadow-md"
+                className="flex items-center justify-between p-2 bg-cyber-surface-alt rounded-md border border-cyber-border transition-all hover:bg-cyber-bg"
               >
                 <div className="flex items-center space-x-2">
-                  <span className={`${user === name ? 'font-medium' : ''}`}>
+                  <span
+                    className={`${
+                      user === name
+                        ? 'font-medium text-cyber-green-500'
+                        : 'text-cyber-text-primary'
+                    }`}
+                  >
                     {user}
                     {user === roomData.moderator && (
-                      <span className="ml-1 text-xs text-teal-600">(Mod)</span>
+                      <span className="ml-1 text-xs text-cyber-gold-500 font-semibold">
+                        (Mod)
+                      </span>
                     )}
                     {user === name && (
-                      <span className="ml-1 text-xs text-gray-500">(You)</span>
+                      <span className="ml-1 text-xs text-cyber-text-muted">
+                        (You)
+                      </span>
                     )}
                   </span>
                 </div>
@@ -147,15 +163,24 @@ const RoomScreen: FC<RoomScreenProps> = ({
           </ul>
         </div>
 
-        <div className="flex flex-col p-4 md:p-6 overflow-y-auto space-y-8">
-          <h2 className="text-xl font-semibold text-gray-800">Room Settings</h2>
+        <div className="flex flex-col p-4 md:p-6 overflow-y-auto space-y-8 bg-cyber-bg">
+          <h2 className="text-xl font-semibold text-cyber-text-primary">
+            Hello World!
+          </h2>
           <div className="space-y-4">
-            <p className="text-gray-600">
-              Room Key: <span className="font-medium">{roomData.key}</span>
+            <p className="text-cyber-text-secondary">
+              Cool stuff is{' '}
+              <span className="font-medium text-cyber-cyan-500 font-mono">
+                coming soon
+              </span>
+              !
             </p>
-            <p className="text-gray-600">
-              Moderator:{' '}
-              <span className="font-medium">{roomData.moderator}</span>
+            <p className="text-cyber-text-secondary">
+              I'm just playing around with{' '}
+              <span className="font-medium text-cyber-gold-500">
+                some stuff first
+              </span>
+              .
             </p>
           </div>
         </div>
