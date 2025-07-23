@@ -1,0 +1,33 @@
+{
+  "name": "pwnjam",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "lint": "eslint .",
+    "preview": "vite preview",
+    "deploy": "npm run build && npm exec wrangler deploy",
+    "setup": "node scripts/setup.js"
+  },
+  "dependencies": {
+    "@tailwindcss/typography": "^0.5.16",
+    "qrcode.react": "^4.2.0",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "tailwindcss": "^4.1.11",
+    "zustand": "^5.0.6"
+  },
+  "devDependencies": {
+    "@cloudflare/vite-plugin": "^1.10.0",
+    "@cloudflare/workers-types": "^4.20250723.0",
+    "@tailwindcss/vite": "^4.1.11",
+    "@types/react": "^19.1.8",
+    "@types/react-dom": "^19.1.6",
+    "@vitejs/plugin-react": "^4.7.0",
+    "typescript": "^5.8.3",
+    "vite": "^7.0.5",
+    "wrangler": "^4.25.1"
+  }
+}
