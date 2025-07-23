@@ -30,22 +30,38 @@ const ShareRoomModal: FC<ShareRoomModalProps> = ({
   };
   
   return (
-    <div className="fixed inset-0 flex items-center justify-center z-50" style={{ backgroundColor: 'rgba(15, 15, 35, 0.8)' }}>
+    <div
+      className="fixed inset-0 flex items-center justify-center z-50"
+      style={{ backgroundColor: 'rgba(15, 15, 35, 0.8)' }}
+    >
       <div className="bg-cyber-surface rounded-lg shadow-xl w-full max-w-md p-6 border border-cyber-border">
         <div className="flex justify-between items-center mb-4">
-          <h2 className="text-xl font-semibold text-cyber-text-primary">Share Room</h2>
-          <button 
+          <h2 className="text-xl font-semibold text-cyber-text-primary">
+            Share Room
+          </h2>
+          <button
             type="button"
             onClick={onClose}
             className="text-cyber-text-muted hover:text-cyber-text-primary transition-colors"
           >
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              className="h-6 w-6"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
               <title>Close share modal</title>
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M6 18L18 6M6 6l12 12"
+              />
             </svg>
           </button>
         </div>
-        
+
         <div className="space-y-6">
           <div>
             <p className="mb-2 text-sm text-cyber-text-secondary">
@@ -68,16 +84,18 @@ const ShareRoomModal: FC<ShareRoomModalProps> = ({
               </button>
             </div>
           </div>
-          
+
           <div className="flex flex-col items-center">
-            <p className="mb-3 text-sm text-cyber-text-secondary">Or scan this QR code:</p>
+            <p className="mb-3 text-sm text-cyber-text-secondary">
+              Or scan this QR code:
+            </p>
             <div className="p-4 bg-white border border-cyber-border rounded-lg">
               <QRCodeSVG value={shareableUrl} size={200} />
             </div>
           </div>
-          
+
           <div className="text-sm text-cyber-text-muted italic">
-            Anyone with this link can join this planning room.
+            Anyone with this link can join this room.
           </div>
         </div>
       </div>
