@@ -101,6 +101,7 @@ export function ChallengePanel({
         },
       ]);
       setFlagInput('');
+      setIsSubmitting(false);
     };
 
     const handleFlagIncorrect = () => {

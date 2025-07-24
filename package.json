@@ -9,7 +9,9 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "deploy": "npm run build && npm exec wrangler deploy",
-    "setup": "node scripts/setup.js"
+    "setup": "node scripts/setup.js",
+    "db:migrations:list": "wrangler d1 migrations list pwnjam",
+    "db:migrations:apply": "wrangler d1 migrations apply pwnjam"
   },
   "dependencies": {
     "@monaco-editor/react": "^4.6.0",
@@ -30,6 +32,6 @@
     "@vitejs/plugin-react": "^4.7.0",
     "typescript": "^5.8.3",
     "vite": "^7.0.5",
-    "wrangler": "^4.25.1"
+    "wrangler": "^4.26.0"
   }
 }

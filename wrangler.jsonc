@@ -8,19 +8,22 @@
     "bindings": [{ "name": "ROOM", "class_name": "Room" }]
   },
   "ai": {
-    "binding": "AI"
+    "binding": "AI",
+    "experimental_remote": true
   },
   "d1_databases": [
     {
       "binding": "DB",
-      "database_name": "pwnjam-db",
-      "database_id": "your-database-id"
+      "database_name": "pwnjam",
+      "database_id": "aaea55c8-eb94-4eac-998f-05b1f89a4b11",
+      "experimental_remote": true
     }
   ],
   "kv_namespaces": [
     {
       "binding": "KV",
-      "id": "your-kv-namespace-id"
+      "id": "beba55e4849445d88e60ad2161322299",
+      "experimental_remote": true
     }
   ],
   "migrations": [{ "tag": "v1", "new_classes": ["Room"] }],
