@@ -7,6 +7,7 @@ import type {
 import { Room } from './room';
 import type { Env } from './types';
 import { createApiConfig } from './config';
+import { ScoringSystem } from './scoring-system';
 
 async function handleRequest(
   request: CfRequest,
@@ -60,10 +61,10 @@ async function handleApiRequest(
   env: Env
 ): Promise<CfResponse> {
   const config = createApiConfig(env);
-  const path = url.pathname.substring(5); // Remove '/api/'
+  const pathWithoutPrefix = url.pathname.substring(5);
 
   // Create a new room
-  if (path === 'rooms' && request.method === 'POST') {
+  if (pathWithoutPrefix === 'rooms' && request.method === 'POST') {
     const body = await request.json<{ name?: string }>();
     const name = body?.name;
 
@@ -96,7 +97,7 @@ async function handleApiRequest(
     return response;
   }
 
-  if (path === 'rooms/join' && request.method === 'POST') {
+  if (pathWithoutPrefix === 'rooms/join' && request.method === 'POST') {
     const body = await request.json<{ name?: string; roomKey?: string }>();
     const name = body?.name;
     const roomKey = body?.roomKey;
@@ -132,7 +133,7 @@ async function handleApiRequest(
     return response;
   }
 
-  if (path === 'rooms/settings' && request.method === 'GET') {
+  if (pathWithoutPrefix === 'rooms/settings' && request.method === 'GET') {
     if (!url.searchParams.has('roomKey')) {
       return new Response(JSON.stringify({ error: 'Room key is required' }), {
         status: 400,
@@ -166,7 +167,7 @@ async function handleApiRequest(
     );
   }
 
-  if (path === 'rooms/settings' && request.method === 'PUT') {
+  if (pathWithoutPrefix === 'rooms/settings' && request.method === 'PUT') {
     const body = await request.json<{
       name?: string;
       roomKey?: string;
@@ -204,6 +205,147 @@ async function handleApiRequest(
         body: JSON.stringify({ name, settings }),
       }) as unknown as CfRequest
     );
+  }
+
+  // Global leaderboard endpoint
+  if (pathWithoutPrefix === 'leaderboard' && request.method === 'GET') {
+    try {
+      const scoringSystem = new ScoringSystem(config, env.DB, env.KV);
+      const globalLeaderboard = await scoringSystem.getGlobalLeaderboard();
+
+      return new Response(
+        JSON.stringify({
+          success: true,
+          leaderboard: globalLeaderboard,
+        }),
+        {
+          headers: { 'Content-Type': 'application/json' },
+        }
+      ) as unknown as CfResponse;
+    } catch (error) {
+      console.error('Error fetching global leaderboard:', error);
+      return new Response(
+        JSON.stringify({
+          error: 'Failed to fetch leaderboard',
+        }),
+        {
+          status: 500,
+          headers: { 'Content-Type': 'application/json' },
+        }
+      ) as unknown as CfResponse;
+    }
+  }
+
+  // User profile endpoint
+  if (
+    pathWithoutPrefix.startsWith('user/profile/') &&
+    request.method === 'GET'
+  ) {
+    const userId = path.split('/')[2];
+
+    if (!userId) {
+      return new Response(JSON.stringify({ error: 'User ID is required' }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' },
+      }) as unknown as CfResponse;
+    }
+
+    try {
+      const scoringSystem = new ScoringSystem(config, env.DB, env.KV);
+      const userStats = await scoringSystem.getUserStats(userId);
+
+      if (!userStats) {
+        return new Response(JSON.stringify({ error: 'User not found' }), {
+          status: 404,
+          headers: { 'Content-Type': 'application/json' },
+        }) as unknown as CfResponse;
+      }
+
+      const skillLevel = scoringSystem.getSkillLevel(userStats.totalScore);
+
+      return new Response(
+        JSON.stringify({
+          success: true,
+          profile: {
+            ...userStats,
+            skillLevel,
+          },
+        }),
+        {
+          headers: { 'Content-Type': 'application/json' },
+        }
+      ) as unknown as CfResponse;
+    } catch (error) {
+      console.error('Error fetching user profile:', error);
+      return new Response(
+        JSON.stringify({
+          error: 'Failed to fetch user profile',
+        }),
+        {
+          status: 500,
+          headers: { 'Content-Type': 'application/json' },
+        }
+      ) as unknown as CfResponse;
+    }
+  }
+
+  // Challenge categories endpoint
+  if (
+    pathWithoutPrefix === 'challenges/categories' &&
+    request.method === 'GET'
+  ) {
+    const categories = [
+      {
+        id: 'web',
+        name: 'Web Application Security',
+        description: 'Web vulnerabilities and exploits',
+      },
+      {
+        id: 'crypto',
+        name: 'Cryptography',
+        description: 'Encryption, hashing, and cryptanalysis',
+      },
+      {
+        id: 'pwn',
+        name: 'Binary Exploitation',
+        description: 'Buffer overflows and binary exploits',
+      },
+      {
+        id: 'reverse',
+        name: 'Reverse Engineering',
+        description: 'Analyzing and understanding binaries',
+      },
+      {
+        id: 'forensics',
+        name: 'Digital Forensics',
+        description: 'Investigating digital evidence',
+      },
+      {
+        id: 'misc',
+        name: 'Miscellaneous',
+        description: 'Programming, logic, and other challenges',
+      },
+      {
+        id: 'steganography',
+        name: 'Steganography',
+        description: 'Hidden information in files',
+      },
+      {
+        id: 'osint',
+        name: 'Open Source Intelligence',
+        description: 'Information gathering from public sources',
+      },
+    ];
+
+    return new Response(
+      JSON.stringify({
+        success: true,
+        categories,
+      }),
+      {
+        headers: { 'Content-Type': 'application/json' },
+      }
+    ) as unknown as CfResponse;
   }
 
   return new Response(JSON.stringify({ error: 'Not found' }), {

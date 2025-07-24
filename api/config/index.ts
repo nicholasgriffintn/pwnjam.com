@@ -26,6 +26,21 @@ interface ApiConfig {
   api: {
     dummyBaseUrl: string;
   };
+  challenge: {
+    timeoutMinutes: number;
+    maxHints: number;
+    basePoints: number;
+    timeBonusMultiplier: number;
+    hintPenalty: number;
+    maxAttempts: number;
+    collaborationBonusMultiplier: number;
+    difficultyPointMultipliers: number[];
+  };
+  ai: {
+    gateway: string;
+    textModel: string;
+    codeModel: string;
+  };
 }
 
 function getEnvVarOptional(
@@ -48,6 +63,14 @@ function parseStringArray(value: string, defaultValue: string[]): string[] {
     .split(',')
     .map((s) => s.trim())
     .filter((s) => s.length > 0);
+}
+
+function parseNumberArray(value: string, defaultValue: number[]): number[] {
+  if (!value) return defaultValue;
+  return value
+    .split(',')
+    .map((s) => parseNumber(s.trim(), 0))
+    .filter((n) => !isNaN(n));
 }
 
 export function createApiConfig(env: Env): ApiConfig {
@@ -113,6 +136,61 @@ export function createApiConfig(env: Env): ApiConfig {
         env,
         'API_DUMMY_BASE_URL' as keyof Env,
         'https://internal'
+      ),
+    },
+    challenge: {
+      timeoutMinutes: parseNumber(
+        getEnvVarOptional(env, 'CHALLENGE_TIMEOUT_MINUTES' as keyof Env, '30'),
+        30
+      ),
+      maxHints: parseNumber(
+        getEnvVarOptional(env, 'MAX_HINTS_PER_CHALLENGE' as keyof Env, '3'),
+        3
+      ),
+      basePoints: parseNumber(
+        getEnvVarOptional(env, 'BASE_CHALLENGE_POINTS' as keyof Env, '100'),
+        100
+      ),
+      timeBonusMultiplier: parseNumber(
+        getEnvVarOptional(env, 'TIME_BONUS_MULTIPLIER' as keyof Env, '1.5'),
+        1.5
+      ),
+      hintPenalty: parseNumber(
+        getEnvVarOptional(env, 'HINT_PENALTY_POINTS' as keyof Env, '20'),
+        20
+      ),
+      maxAttempts: parseNumber(
+        getEnvVarOptional(env, 'MAX_CHALLENGE_ATTEMPTS' as keyof Env, '10'),
+        10
+      ),
+      collaborationBonusMultiplier: parseNumber(
+        getEnvVarOptional(
+          env,
+          'COLLABORATION_BONUS_MULTIPLIER' as keyof Env,
+          '1.2'
+        ),
+        1.2
+      ),
+      difficultyPointMultipliers: parseNumberArray(
+        getEnvVarOptional(
+          env,
+          'DIFFICULTY_POINT_MULTIPLIERS' as keyof Env,
+          '1,1.5,2,3,5'
+        ),
+        [1, 1.5, 2, 3, 5]
+      ),
+    },
+    ai: {
+      gateway: getEnvVarOptional(env, 'AI_GATEWAY_ID' as keyof Env, 'pwnjam'),
+      textModel: getEnvVarOptional(
+        env,
+        'AI_MODEL_TEXT' as keyof Env,
+        '@cf/google/gemma-3-12b-it'
+      ),
+      codeModel: getEnvVarOptional(
+        env,
+        'AI_MODEL_CODE' as keyof Env,
+        '@cf/qwen/qwen2.5-coder-32b-instruct'
       ),
     },
   };

@@ -1,4 +1,9 @@
-import type { RoomData, RoomSettings } from '../types';
+import type {
+  RoomData,
+  RoomSettings,
+  WebSocketMessage,
+  WebSocketMessageType,
+} from '../types';
 import { config } from '../config';
 
 const { api, websocket } = config;
@@ -6,23 +11,6 @@ const { api, websocket } = config;
 let activeSocket: WebSocket | null = null;
 let reconnectAttempts = 0;
 const eventListeners: Record<string, ((data: WebSocketMessage) => void)[]> = {};
-
-export type WebSocketMessageType =
-  | 'initialize'
-  | 'userJoined'
-  | 'userLeft'
-  | 'userConnectionStatus'
-  | 'newModerator'
-  | 'settingsUpdated'
-  | 'error'
-  | 'disconnected';
-
-interface WebSocketMessage {
-  type: WebSocketMessageType;
-  roomData?: RoomData;
-  settings?: RoomSettings;
-  error?: string;
-}
 
 /**
  * Create a new planning poker room
@@ -124,6 +112,8 @@ export function connectToRoom(
         console.log('Received message:', data);
 
         switch (data.type) {
+          case 'roomJoined':
+          case 'roomData':
           case 'initialize':
           case 'userJoined':
           case 'userLeft':
@@ -133,13 +123,19 @@ export function connectToRoom(
             if (data.roomData) {
               onRoomUpdate(data.roomData);
             }
-
-            triggerEventListeners(data.type, data);
+            triggerEventListeners(data.type as WebSocketMessageType, data);
             break;
-
+          case 'challengeStarted':
+          case 'challengeSolved':
+          case 'flagIncorrect':
+          case 'hintReceived':
+          case 'leaderboardUpdated':
+          case 'scoreUpdated':
+            triggerEventListeners(data.type as WebSocketMessageType, data);
+            break;
           case 'error':
             console.error('Server error:', data.error);
-            triggerEventListeners('error', data);
+            triggerEventListeners('error' as WebSocketMessageType, data);
             break;
 
           default:
@@ -160,7 +156,7 @@ export function connectToRoom(
 
     socket.onerror = (error) => {
       console.error('WebSocket error:', error);
-      triggerEventListeners('error', {
+      triggerEventListeners('error' as WebSocketMessageType, {
         type: 'error',
         error: 'Connection error occurred',
       });
@@ -170,7 +166,7 @@ export function connectToRoom(
     return socket;
   } catch (error) {
     console.error('Error creating WebSocket:', error);
-    triggerEventListeners('error', {
+    triggerEventListeners('error' as WebSocketMessageType, {
       type: 'error',
       error:
         error instanceof Error ? error.message : 'Failed to connect to server',
@@ -207,8 +203,8 @@ function handleReconnect(
     }, delay);
   } else {
     console.error('Max reconnection attempts reached');
-    triggerEventListeners('disconnected', {
-      type: 'disconnected',
+    triggerEventListeners('error' as WebSocketMessageType, {
+      type: 'error',
       error: 'Connection lost. Please refresh the page to reconnect.',
     });
   }
@@ -372,4 +368,158 @@ export function updateSettings(settings: Partial<RoomSettings>): void {
       settings,
     })
   );
+}
+
+/**
+ * Start a new CTF challenge
+ * @param {string} category - Optional category for the challenge
+ * @param {number} difficulty - Optional difficulty level (1-5)
+ */
+export function startChallenge(category?: string, difficulty?: number): void {
+  if (!activeSocket || activeSocket.readyState !== WebSocket.OPEN) {
+    throw new Error('Not connected to room');
+  }
+
+  activeSocket.send(
+    JSON.stringify({
+      type: 'startChallenge',
+      category,
+      difficulty,
+    })
+  );
+}
+
+/**
+ * Submit a flag for the current challenge
+ * @param {string} flag - The flag to submit
+ */
+export function submitFlag(flag: string): void {
+  if (!activeSocket || activeSocket.readyState !== WebSocket.OPEN) {
+    throw new Error('Not connected to room');
+  }
+
+  activeSocket.send(
+    JSON.stringify({
+      type: 'submitFlag',
+      flag,
+    })
+  );
+}
+
+/**
+ * Request a hint for the current challenge
+ */
+export function requestHint(): void {
+  if (!activeSocket || activeSocket.readyState !== WebSocket.OPEN) {
+    throw new Error('Not connected to room');
+  }
+
+  activeSocket.send(
+    JSON.stringify({
+      type: 'requestHint',
+    })
+  );
+}
+
+/**
+ * Get the current leaderboard
+ */
+export function getLeaderboard(): void {
+  if (!activeSocket || activeSocket.readyState !== WebSocket.OPEN) {
+    throw new Error('Not connected to room');
+  }
+
+  activeSocket.send(
+    JSON.stringify({
+      type: 'getLeaderboard',
+    })
+  );
+}
+
+/**
+ * Get global leaderboard via REST API
+ * @returns {Promise<any>} - The global leaderboard data
+ */
+export async function getGlobalLeaderboard(): Promise<any> {
+  try {
+    const response = await fetch(`${api.baseUrl}/leaderboard`, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(
+        errorData.error || `Failed to get leaderboard: ${response.status}`
+      );
+    }
+
+    const data = await response.json();
+    return data.leaderboard;
+  } catch (error) {
+    console.error('Error getting global leaderboard:', error);
+    throw error;
+  }
+}
+
+/**
+ * Get user profile
+ * @param {string} userId - The user ID
+ * @returns {Promise<any>} - The user profile data
+ */
+export async function getUserProfile(userId: string): Promise<any> {
+  try {
+    const response = await fetch(
+      `${api.baseUrl}/user/profile/${encodeURIComponent(userId)}`,
+      {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      }
+    );
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(
+        errorData.error || `Failed to get user profile: ${response.status}`
+      );
+    }
+
+    const data = await response.json();
+    return data.profile;
+  } catch (error) {
+    console.error('Error getting user profile:', error);
+    throw error;
+  }
+}
+
+/**
+ * Get available challenge categories
+ * @returns {Promise<any>} - The challenge categories
+ */
+export async function getChallengeCategories(): Promise<any> {
+  try {
+    const response = await fetch(`${api.baseUrl}/challenges/categories`, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(
+        errorData.error || `Failed to get categories: ${response.status}`
+      );
+    }
+
+    const data = await response.json();
+    return data.categories;
+  } catch (error) {
+    console.error('Error getting challenge categories:', error);
+    throw error;
+  }
 }

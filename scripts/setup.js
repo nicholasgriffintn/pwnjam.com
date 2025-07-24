@@ -169,6 +169,75 @@ async function promptForConfig() {
     config.VITE_MAX_RECONNECT_DELAY = maxDelay;
   }
 
+  // CTF Configuration
+  const configureCTF = await question('\n🎯 Configure CTF settings? (Y/n): ');
+  if (
+    configureCTF.toLowerCase() !== 'n' &&
+    configureCTF.toLowerCase() !== 'no'
+  ) {
+    console.log(
+      '\n🎯 CTF Configuration (these will be set in wrangler.jsonc):'
+    );
+
+    const challengeTimeout =
+      (await question('Challenge timeout in minutes (30): ')) || '30';
+    if (!isNaN(challengeTimeout) && parseInt(challengeTimeout) > 0) {
+      config.CHALLENGE_TIMEOUT_MINUTES = challengeTimeout;
+    }
+
+    const maxHints = (await question('Max hints per challenge (3): ')) || '3';
+    if (!isNaN(maxHints) && parseInt(maxHints) >= 0) {
+      config.MAX_HINTS_PER_CHALLENGE = maxHints;
+    }
+
+    const basePoints =
+      (await question('Base challenge points (100): ')) || '100';
+    if (!isNaN(basePoints) && parseInt(basePoints) > 0) {
+      config.BASE_CHALLENGE_POINTS = basePoints;
+    }
+
+    const timeBonusMultiplier =
+      (await question('Time bonus multiplier (1.5): ')) || '1.5';
+    if (!isNaN(timeBonusMultiplier) && parseFloat(timeBonusMultiplier) > 0) {
+      config.TIME_BONUS_MULTIPLIER = timeBonusMultiplier;
+    }
+
+    const hintPenalty = (await question('Hint penalty points (20): ')) || '20';
+    if (!isNaN(hintPenalty) && parseInt(hintPenalty) >= 0) {
+      config.HINT_PENALTY_POINTS = hintPenalty;
+    }
+
+    const maxAttempts =
+      (await question('Max challenge attempts (10): ')) || '10';
+    if (!isNaN(maxAttempts) && parseInt(maxAttempts) > 0) {
+      config.MAX_CHALLENGE_ATTEMPTS = maxAttempts;
+    }
+
+    const collaborationBonus =
+      (await question('Collaboration bonus multiplier (1.2): ')) || '1.2';
+    if (!isNaN(collaborationBonus) && parseFloat(collaborationBonus) > 0) {
+      config.COLLABORATION_BONUS_MULTIPLIER = collaborationBonus;
+    }
+
+    const difficultyMultipliers =
+      (await question('Difficulty point multipliers (1,1.5,2,3,5): ')) ||
+      '1,1.5,2,3,5';
+    config.DIFFICULTY_POINT_MULTIPLIERS = difficultyMultipliers;
+
+    // AI Model Configuration
+    console.log('\n🤖 AI Model Configuration:');
+    const aiTextModel =
+      (await question('AI text model (@cf/google/gemma-3-12b-it): ')) ||
+      '@cf/google/gemma-3-12b-it';
+    config.AI_MODEL_TEXT = aiTextModel;
+
+    const aiCodeModel =
+      (await question(
+        'AI code model (@cf/qwen/qwen2.5-coder-32b-instruct): '
+      )) || '@cf/qwen/qwen2.5-coder-32b-instruct';
+    config.AI_MODEL_CODE = aiCodeModel;
+  }
+
   // API Configuration (optional advanced settings)
   const configureApi = await question(
     '\nConfigure advanced API settings? (y/N): '

@@ -7,6 +7,22 @@
   "durable_objects": {
     "bindings": [{ "name": "ROOM", "class_name": "Room" }]
   },
+  "ai": {
+    "binding": "AI"
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "pwnjam-db",
+      "database_id": "your-database-id"
+    }
+  ],
+  "kv_namespaces": [
+    {
+      "binding": "KV",
+      "id": "your-kv-namespace-id"
+    }
+  ],
   "migrations": [{ "tag": "v1", "new_classes": ["Room"] }],
   "assets": {
     "binding": "ASSETS",
@@ -26,7 +42,17 @@
     "WS_HEARTBEAT_INTERVAL": "30000",
     "WS_CONNECTION_TIMEOUT": "60000",
     "MAX_CONNECTIONS_PER_ROOM": "50",
-    "API_DUMMY_BASE_URL": "https://internal"
+    "API_DUMMY_BASE_URL": "https://internal",
+    "CHALLENGE_TIMEOUT_MINUTES": "30",
+    "MAX_HINTS_PER_CHALLENGE": "3",
+    "BASE_CHALLENGE_POINTS": "100",
+    "TIME_BONUS_MULTIPLIER": "1.5",
+    "HINT_PENALTY_POINTS": "20",
+    "AI_MODEL_TEXT": "@cf/google/gemma-3-12b-it",
+    "AI_MODEL_CODE": "@cf/qwen/qwen2.5-coder-32b-instruct",
+    "MAX_CHALLENGE_ATTEMPTS": "10",
+    "COLLABORATION_BONUS_MULTIPLIER": "1.2",
+    "DIFFICULTY_POINT_MULTIPLIERS": "1,1.5,2,3,5"
   },
   "observability": {
     "enabled": false

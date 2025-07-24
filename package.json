@@ -9,13 +9,18 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "deploy": "npm run build && npm exec wrangler deploy",
-    "setup": "node scripts/setup.js"
+    "setup": "node scripts/setup.js",
+    "db:migrate": "node scripts/migrate-db.js",
+    "db:seed": "wrangler d1 execute pwnjam-db --file=api/database-schema.sql",
+    "db:reset": "wrangler d1 execute pwnjam-db --command=\"DROP TABLE IF EXISTS users; DROP TABLE IF EXISTS user_stats; DROP TABLE IF EXISTS challenge_history; DROP TABLE IF EXISTS global_leaderboard; DROP TABLE IF EXISTS room_leaderboards; DROP TABLE IF EXISTS achievements; DROP TABLE IF EXISTS user_achievements; DROP TABLE IF EXISTS user_category_stats; DROP TABLE IF EXISTS room_stats;\" && npm run db:seed"
   },
   "dependencies": {
+    "@monaco-editor/react": "^4.6.0",
     "@tailwindcss/typography": "^0.5.16",
     "qrcode.react": "^4.2.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
+    "react-markdown": "^10.1.0",
     "tailwindcss": "^4.1.11",
     "zustand": "^5.0.6"
   },

@@ -7,39 +7,27 @@ import type {
   WebSocket,
   Response as CfResponse,
 } from '@cloudflare/workers-types';
-import type { Env } from './types';
+
 import { createApiConfig } from './config';
-
-interface RoomData {
-  key: string;
-  users: string[];
-  moderator: string;
-  connectedUsers: Record<string, boolean>;
-  settings: {};
-}
-
-interface BroadcastMessage {
-  type: string;
-  [key: string]: unknown;
-}
-
-interface SessionInfo {
-  webSocket: WebSocket;
-  roomKey: string;
-  userName: string;
-}
+import { AIChallengeEngine } from './ai-challenge-engine';
+import { ScoringSystem } from './scoring-system';
+import type { Env, RoomData, SessionInfo, BroadcastMessage } from './types';
 
 export class Room {
   state: DurableObjectState;
   env: Env;
   sessions: Map<WebSocket, SessionInfo>;
   config: ReturnType<typeof createApiConfig>;
+  AIChallengeEngine: AIChallengeEngine;
+  scoringSystem: ScoringSystem;
 
   constructor(state: DurableObjectState, env: Env) {
     this.state = state;
     this.env = env;
     this.sessions = new Map();
     this.config = createApiConfig(env);
+    this.AIChallengeEngine = new AIChallengeEngine(env.AI, this.config);
+    this.scoringSystem = new ScoringSystem(this.config, env.DB, env.KV);
 
     this.state.blockConcurrencyWhile(async () => {
       let roomData = await this.state.storage.get<RoomData>('roomData');
@@ -50,6 +38,13 @@ export class Room {
           moderator: '',
           connectedUsers: {},
           settings: {},
+          scores: {},
+          challengeHistory: [],
+          gameSettings: {
+            isActive: false,
+            currentRound: 0,
+            totalRounds: 1,
+          },
         };
         await this.state.storage.put('roomData', roomData);
       } else if (!roomData.connectedUsers) {
@@ -124,6 +119,13 @@ export class Room {
           moderator,
           connectedUsers: { [moderator]: true },
           settings: {},
+          scores: {},
+          challengeHistory: [],
+          gameSettings: {
+            isActive: false,
+            currentRound: 0,
+            totalRounds: 1,
+          },
         };
 
         await this.state.storage.put('roomData', roomData);
@@ -270,6 +272,7 @@ export class Room {
 
   async handleSession(webSocket: WebSocket, roomKey: string, userName: string) {
     const session = { webSocket, roomKey, userName };
+    // @ts-ignore
     this.sessions.set(webSocket, session);
 
     webSocket.accept();
@@ -329,6 +332,18 @@ export class Room {
 
         if (data.type === 'updateSettings') {
           await this.handleUpdateSettings(userName, data.settings);
+        } else if (data.type === 'startChallenge') {
+          await this.handleStartChallenge(
+            userName,
+            data.category,
+            data.difficulty
+          );
+        } else if (data.type === 'submitFlag') {
+          await this.handleSubmitFlag(userName, data.flag);
+        } else if (data.type === 'requestHint') {
+          await this.handleRequestHint(userName);
+        } else if (data.type === 'getLeaderboard') {
+          await this.handleGetLeaderboard(userName);
         }
       } catch (err: unknown) {
         webSocket.send(
@@ -416,6 +431,284 @@ export class Room {
         roomData,
       });
     });
+  }
+
+  async handleStartChallenge(
+    userName: string,
+    category?: string,
+    difficulty?: number
+  ) {
+    await this.state.blockConcurrencyWhile(async () => {
+      const roomData = await this.state.storage.get<RoomData>('roomData');
+      if (!roomData) {
+        return;
+      }
+
+      if (
+        roomData.settings.gameMode === 'tournament' &&
+        roomData.moderator !== userName
+      ) {
+        this.sendToUser(userName, {
+          type: 'error',
+          error: 'Only the moderator can start challenges in tournament mode',
+        });
+        return;
+      }
+
+      try {
+        const challengeCategory =
+          category ||
+          this.selectRandomCategory(roomData.settings.challengeCategories);
+        const challengeDifficulty =
+          difficulty ||
+          this.getDifficultyLevel(roomData.settings.difficultyLevel);
+
+        const challenge = await this.AIChallengeEngine.generateChallenge({
+          category: challengeCategory,
+          difficulty: challengeDifficulty,
+          previousChallenges: roomData.challengeHistory.map((c) => c.id),
+          userLevel: this.getUserLevel(userName, roomData),
+        });
+
+        challenge.startTime = Date.now();
+        roomData.currentChallenge = challenge;
+
+        await this.state.storage.put('roomData', roomData);
+
+        this.broadcast({
+          type: 'challengeStarted',
+          challenge,
+          roomData,
+        });
+      } catch (error) {
+        console.error('Error generating challenge:', error);
+        this.sendToUser(userName, {
+          type: 'error',
+          error: 'Failed to generate challenge. Please try again.',
+        });
+      }
+    });
+  }
+
+  async handleSubmitFlag(userName: string, flag: string) {
+    await this.state.blockConcurrencyWhile(async () => {
+      const roomData = await this.state.storage.get<RoomData>('roomData');
+      if (!roomData || !roomData.currentChallenge) {
+        this.sendToUser(userName, {
+          type: 'error',
+          error: 'No active challenge',
+        });
+        return;
+      }
+
+      const challenge = roomData.currentChallenge;
+      challenge.attempts++;
+
+      if (challenge.attempts > this.config.challenge.maxAttempts) {
+        this.sendToUser(userName, {
+          type: 'error',
+          error: 'Maximum attempts exceeded',
+        });
+        return;
+      }
+
+      const isCorrect = this.validateFlag(flag, challenge.flag);
+
+      if (isCorrect) {
+        challenge.endTime = Date.now();
+        const solveTime =
+          challenge.endTime - (challenge.startTime || challenge.endTime);
+
+        const score = this.scoringSystem.calculateScore({
+          challenge,
+          solveTime,
+          hintsUsed: challenge.hintsUsed,
+          isCollaboration: roomData.users.length > 1,
+        });
+
+        const userScore = roomData.scores[userName] || {
+          userId: userName,
+          totalScore: 0,
+          challengesSolved: 0,
+          totalTime: 0,
+          hintsUsed: 0,
+        };
+
+        userScore.totalScore += score;
+        userScore.challengesSolved++;
+        userScore.totalTime += solveTime;
+        userScore.hintsUsed += challenge.hintsUsed;
+        userScore.lastSolveTime = Date.now();
+
+        roomData.scores[userName] = userScore;
+        roomData.challengeHistory.push({ ...challenge });
+        roomData.currentChallenge = undefined;
+
+        await this.state.storage.put('roomData', roomData);
+
+        await this.scoringSystem.updateLeaderboard(roomData.key, userScore);
+        await this.scoringSystem.updateGlobalLeaderboard(userScore);
+
+        this.broadcast({
+          type: 'challengeSolved',
+          user: userName,
+          score,
+          userScore,
+          roomData,
+        });
+
+        this.broadcast({
+          type: 'scoreUpdated',
+          user: userName,
+          score: userScore,
+          roomData,
+        });
+      } else {
+        await this.state.storage.put('roomData', roomData);
+
+        this.sendToUser(userName, {
+          type: 'flagIncorrect',
+          message: `Incorrect flag. ${
+            this.config.challenge.maxAttempts - challenge.attempts
+          } attempts remaining.`,
+        });
+      }
+    });
+  }
+
+  async handleRequestHint(userName: string) {
+    await this.state.blockConcurrencyWhile(async () => {
+      const roomData = await this.state.storage.get<RoomData>('roomData');
+      if (!roomData || !roomData.currentChallenge) {
+        this.sendToUser(userName, {
+          type: 'error',
+          error: 'No active challenge',
+        });
+        return;
+      }
+
+      const challenge = roomData.currentChallenge;
+
+      if (!roomData.settings.hintsEnabled) {
+        this.sendToUser(userName, {
+          type: 'error',
+          error: 'Hints are disabled for this room',
+        });
+        return;
+      }
+
+      if (challenge.hintsUsed >= this.config.challenge.maxHints) {
+        this.sendToUser(userName, {
+          type: 'error',
+          error: 'Maximum hints already used',
+        });
+        return;
+      }
+
+      try {
+        const hint = await this.AIChallengeEngine.generateHint({
+          challengeId: challenge.id,
+          previousHints: challenge.hints.slice(0, challenge.hintsUsed),
+          hintsUsed: challenge.hintsUsed,
+        });
+
+        challenge.hintsUsed++;
+        challenge.hints[challenge.hintsUsed - 1] = hint;
+
+        await this.state.storage.put('roomData', roomData);
+
+        this.sendToUser(userName, {
+          type: 'hintReceived',
+          hint,
+          hintsUsed: challenge.hintsUsed,
+          maxHints: this.config.challenge.maxHints,
+        });
+      } catch (error) {
+        console.error('Error generating hint:', error);
+        this.sendToUser(userName, {
+          type: 'error',
+          error: 'Failed to generate hint. Please try again.',
+        });
+      }
+    });
+  }
+
+  async handleGetLeaderboard(userName: string) {
+    try {
+      const roomData = await this.state.storage.get<RoomData>('roomData');
+      if (!roomData) return;
+
+      const roomLeaderboard = await this.scoringSystem.getLeaderboard(
+        roomData.key
+      );
+      const globalLeaderboard = await this.scoringSystem.getGlobalLeaderboard();
+
+      const MAX_LEADERBOARD_SIZE = 10;
+
+      this.sendToUser(userName, {
+        type: 'leaderboardUpdated',
+        leaderboard: {
+          room: roomLeaderboard,
+          global: globalLeaderboard.slice(0, MAX_LEADERBOARD_SIZE),
+        },
+      });
+    } catch (error) {
+      console.error('Error fetching leaderboard:', error);
+      this.sendToUser(userName, {
+        type: 'error',
+        error: 'Failed to fetch leaderboard',
+      });
+    }
+  }
+
+  private validateFlag(submitted: string, correct: string): boolean {
+    return submitted.trim().toLowerCase() === correct.trim().toLowerCase();
+  }
+
+  private selectRandomCategory(categories?: string[]): string {
+    const defaultCategories = [
+      'web',
+      'crypto',
+      'pwn',
+      'reverse',
+      'forensics',
+      'misc',
+    ];
+    const availableCategories =
+      categories && categories.length > 0 ? categories : defaultCategories;
+    return availableCategories[
+      Math.floor(Math.random() * availableCategories.length)
+    ];
+  }
+
+  private getDifficultyLevel(difficultyLevel?: string): number {
+    const difficultyMap = {
+      beginner: 1,
+      intermediate: 2,
+      advanced: 3,
+      expert: 4,
+    };
+    return difficultyMap[difficultyLevel as keyof typeof difficultyMap] || 2;
+  }
+
+  private getUserLevel(userName: string, roomData: RoomData): number {
+    const userScore = roomData.scores[userName];
+    if (!userScore) return 1;
+
+    const level = this.scoringSystem.getSkillLevel(userScore.totalScore);
+    return level.level;
+  }
+
+  private sendToUser(userName: string, message: any) {
+    for (const session of this.sessions.values()) {
+      if (session.userName === userName) {
+        try {
+          session.webSocket.send(JSON.stringify(message));
+        } catch (err) {
+          // Ignore errors (the WebSocket might already be closed)
+        }
+      }
+    }
   }
 
   broadcast(message: BroadcastMessage) {

@@ -9,9 +9,13 @@ import {
   addEventListener,
   removeEventListener,
   isConnected,
-  type WebSocketMessageType,
 } from './lib/api-service';
-import type { RoomData, WebSocketErrorData, RoomSettings } from './types';
+import type {
+  RoomData,
+  WebSocketErrorData,
+  WebSocketMessageType,
+  RoomSettings,
+} from './types';
 
 import WelcomeScreen from './components/WelcomeScreen';
 import CreateRoomScreen from './components/CreateRoomScreen';
@@ -35,6 +39,13 @@ const App = () => {
     moderator: '',
     connectedUsers: {},
     settings: {},
+    scores: {},
+    challengeHistory: [],
+    gameSettings: {
+      isActive: false,
+      currentRound: 0,
+      totalRounds: 1,
+    },
   });
   const [isModeratorView, setIsModeratorView] = useState<boolean>(false);
   const [error, setError] = useState<string>('');
@@ -213,6 +224,13 @@ const App = () => {
       moderator: '',
       connectedUsers: {},
       settings: {},
+      scores: {},
+      challengeHistory: [],
+      gameSettings: {
+        isActive: false,
+        currentRound: 0,
+        totalRounds: 1,
+      },
     });
     setScreen('welcome');
   };

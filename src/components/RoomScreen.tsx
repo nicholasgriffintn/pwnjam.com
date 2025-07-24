@@ -1,11 +1,13 @@
 import { type FC, useState, useEffect } from 'react';
 
 import { config } from '../config';
-import type { RoomData } from '../types';
+import type { RoomData, Challenge } from '../types';
 import ConnectionStatus from './ConnectionStatus';
 import ErrorBanner from './ErrorBanner';
 import SettingsModal from './SettingsModal';
 import ShareRoomModal from './ShareRoomModal';
+import { ChallengePanel } from './ChallengePanel';
+import { ScoreboardPanel } from './ScoreboardPanel';
 
 interface RoomScreenProps {
   roomData: RoomData;
@@ -31,10 +33,20 @@ const RoomScreen: FC<RoomScreenProps> = ({
   const { app } = config;
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
   const [isShareModalOpen, setIsShareModalOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState<'challenge' | 'leaderboard'>('challenge');
+  const [currentChallenge, setCurrentChallenge] = useState<Challenge | undefined>(roomData.currentChallenge);
 
   useEffect(() => {
     console.log('Room settings updated:', roomData.settings);
   }, [roomData.settings]);
+
+  useEffect(() => {
+    setCurrentChallenge(roomData.currentChallenge);
+  }, [roomData.currentChallenge]);
+
+  const handleChallengeUpdate = (challenge: Challenge) => {
+    setCurrentChallenge(challenge);
+  };
 
   return (
     <div className="flex flex-col h-screen">
@@ -131,57 +143,119 @@ const RoomScreen: FC<RoomScreenProps> = ({
           <h2 className="mb-4 text-lg font-medium text-cyber-text-primary">
             Participants ({roomData.users.length})
           </h2>
-          <ul className="space-y-2">
-            {roomData.users.map((user: string) => (
-              <li
-                key={user}
-                className="flex items-center justify-between p-2 bg-cyber-surface-alt rounded-md border border-cyber-border transition-all hover:bg-cyber-bg"
-              >
-                <div className="flex items-center space-x-2">
-                  <span
-                    className={`${
-                      user === name
-                        ? 'font-medium text-cyber-green-500'
-                        : 'text-cyber-text-primary'
-                    }`}
-                  >
-                    {user}
-                    {user === roomData.moderator && (
-                      <span className="ml-1 text-xs text-cyber-gold-500 font-semibold">
-                        (Mod)
+          <ul className="space-y-3">
+            {roomData.users.map((user: string) => {
+              const userScore = roomData.scores?.[user];
+              const isConnected = roomData.connectedUsers?.[user];
+              
+              return (
+                <li
+                  key={user}
+                  className="p-3 bg-cyber-surface-alt rounded-md border border-cyber-border transition-all hover:bg-cyber-bg"
+                >
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center space-x-2">
+                      <div className={`w-2 h-2 rounded-full ${
+                        isConnected ? 'bg-cyber-green-500' : 'bg-cyber-red-500'
+                      }`} />
+                      <span
+                        className={`text-sm font-medium ${
+                          user === name
+                            ? 'text-cyber-green-500'
+                            : 'text-cyber-text-primary'
+                        }`}
+                      >
+                        {user}
                       </span>
-                    )}
-                    {user === name && (
-                      <span className="ml-1 text-xs text-cyber-text-muted">
-                        (You)
-                      </span>
-                    )}
-                  </span>
-                </div>
-              </li>
-            ))}
+                    </div>
+                    <div className="flex items-center space-x-1">
+                      {user === roomData.moderator && (
+                        <span className="px-2 py-1 text-xs bg-cyber-gold-500 text-cyber-bg rounded font-semibold">
+                          MOD
+                        </span>
+                      )}
+                      {user === name && (
+                        <span className="px-2 py-1 text-xs bg-cyber-cyan-500 text-cyber-bg rounded">
+                          YOU
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  
+                  {userScore && (
+                    <div className="grid grid-cols-2 gap-2 text-xs text-cyber-text-secondary">
+                      <div className="flex justify-between">
+                        <span>Score:</span>
+                        <span className="font-medium text-cyber-cyan-400">
+                          {userScore.totalScore.toLocaleString()}
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>Solved:</span>
+                        <span className="font-medium text-cyber-green-400">
+                          {userScore.challengesSolved}
+                        </span>
+                      </div>
+                    </div>
+                  )}
+                  
+                  {!userScore && (
+                    <div className="text-xs text-cyber-text-muted italic">
+                      No challenges completed yet
+                    </div>
+                  )}
+                </li>
+              );
+            })}
           </ul>
         </div>
 
-        <div className="flex flex-col p-4 md:p-6 overflow-y-auto space-y-8 bg-cyber-bg">
-          <h2 className="text-xl font-semibold text-cyber-text-primary">
-            Hello World!
-          </h2>
-          <div className="space-y-4">
-            <p className="text-cyber-text-secondary">
-              Cool stuff is{' '}
-              <span className="font-medium text-cyber-cyan-500 font-mono">
-                coming soon
-              </span>
-              !
-            </p>
-            <p className="text-cyber-text-secondary">
-              I'm just playing around with{' '}
-              <span className="font-medium text-cyber-gold-500">
-                some stuff first
-              </span>
-              .
-            </p>
+        <div className="flex flex-col p-4 md:p-6 overflow-y-auto bg-cyber-bg">
+          <div className="mb-6">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-xl font-semibold text-cyber-text-primary">
+                🎯 CTF Challenge Platform
+              </h2>
+              
+              <div className="flex bg-cyber-surface rounded-lg p-1">
+                <button
+                  onClick={() => setActiveTab('challenge')}
+                  className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                    activeTab === 'challenge'
+                      ? 'bg-cyber-cyan-600 text-white'
+                      : 'text-cyber-text-secondary hover:text-cyber-text-primary'
+                  }`}
+                >
+                  🧩 Challenge
+                </button>
+                <button
+                  onClick={() => setActiveTab('leaderboard')}
+                  className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                    activeTab === 'leaderboard'
+                      ? 'bg-cyber-cyan-600 text-white'
+                      : 'text-cyber-text-secondary hover:text-cyber-text-primary'
+                  }`}
+                >
+                  🏆 Leaderboard
+                </button>
+              </div>
+            </div>
+            
+            {activeTab === 'challenge' && (
+              <ChallengePanel
+                currentChallenge={currentChallenge}
+                isRoomModerator={isModeratorView}
+                onChallengeUpdate={handleChallengeUpdate}
+                settings={roomData.settings}
+              />
+            )}
+            
+            {activeTab === 'leaderboard' && (
+              <ScoreboardPanel
+                roomScores={roomData.scores || {}}
+                currentUser={name}
+              />
+            )}
           </div>
         </div>
       </div>

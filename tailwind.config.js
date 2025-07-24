@@ -4,7 +4,7 @@ export default {
   theme: {
     extend: {
       colors: {
-        'cyber': {
+        cyber: {
           bg: '#0f0f23',
           surface: '#1a1a2e',
           'surface-alt': '#16213e',
@@ -50,6 +50,9 @@ export default {
           primary: '#e6e6e6',
           secondary: '#a0a0a0',
           muted: '#666666',
+          gold: '#ffd93d',
+          silver: '#c0c0c0',
+          bronze: '#cd7f32',
         },
         'cyber-gold': {
           50: '#fffdf0',
@@ -62,8 +65,8 @@ export default {
           700: '#998225',
           800: '#665718',
           900: '#332b0c',
-        }
-      }
+        },
+      },
     },
   },
   plugins: [],
