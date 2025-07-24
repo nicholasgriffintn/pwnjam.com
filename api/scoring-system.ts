@@ -2,7 +2,6 @@ import type { D1Database, KVNamespace } from '@cloudflare/workers-types';
 
 import type { ApiConfig } from './config';
 import type {
-  Challenge,
   ScoreCalculationInput,
   UserScore,
   LeaderboardEntry,

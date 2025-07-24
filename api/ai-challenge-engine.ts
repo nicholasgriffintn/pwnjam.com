@@ -25,6 +25,7 @@ export class AIChallengeEngine {
     const challengeId = this.generateChallengeId();
 
     const prompt = this.buildChallengePrompt(template, request);
+    const schema = this.buildChallengePromptSchema();
 
     try {
       const response = await this.ai.run(
@@ -41,6 +42,7 @@ export class AIChallengeEngine {
               content: prompt,
             },
           ],
+          guided_json: schema,
           max_tokens: 30000,
           temperature: 0.7,
         },
@@ -149,16 +151,40 @@ export class AIChallengeEngine {
     - Educational and appropriate content only
     - Challenge should be solvable in ${this.estimateTime(
       request.difficulty
-    )} minutes
-    
-    Return the response in this JSON format:
-    {
-      "title": "Challenge Title",
-      "description": "Detailed challenge description and setup",
-      "flag": "flag{...}",
-      "hints": ["hint1", "hint2", "hint3"],
-      "resources": ["any additional resources or files mentioned"]
-    }`;
+    )} minutes`;
+  }
+
+  private buildChallengePromptSchema(): Record<string, any> {
+    return {
+      type: 'object',
+      properties: {
+        title: { type: 'string', description: 'Title of the challenge' },
+        description: {
+          type: 'string',
+          description: 'Detailed description and setup for the challenge',
+        },
+        flag: {
+          type: 'string',
+          pattern: '^flag\\{.*\\}$',
+          description: 'The flag to be found in the challenge',
+        },
+        hints: {
+          type: 'array',
+          items: { type: 'string' },
+          minItems: 2,
+          maxItems: 3,
+          description:
+            'Progressive hints to help users solve the challenge, in order of increasing specificity',
+        },
+        resources: {
+          type: 'array',
+          items: { type: 'string' },
+          description:
+            'Any additional resources or files that are part of the challenge',
+        },
+      },
+      required: ['title', 'description', 'flag', 'hints'],
+    };
   }
 
   private parseChallengeResponse(response: string): any {

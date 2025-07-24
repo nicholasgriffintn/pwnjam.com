@@ -241,7 +241,7 @@ async function handleApiRequest(
     pathWithoutPrefix.startsWith('user/profile/') &&
     request.method === 'GET'
   ) {
-    const userId = path.split('/')[2];
+    const userId = pathWithoutPrefix.split('/')[2];
 
     if (!userId) {
       return new Response(JSON.stringify({ error: 'User ID is required' }), {

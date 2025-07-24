@@ -12,6 +12,7 @@ import { createApiConfig } from './config';
 import { AIChallengeEngine } from './ai-challenge-engine';
 import { ScoringSystem } from './scoring-system';
 import type { Env, RoomData, SessionInfo, BroadcastMessage } from './types';
+import { CHALLENGE_CATEGORIES } from './data-model/challenge';
 
 export class Room {
   state: DurableObjectState;
@@ -20,6 +21,29 @@ export class Room {
   config: ReturnType<typeof createApiConfig>;
   AIChallengeEngine: AIChallengeEngine;
   scoringSystem: ScoringSystem;
+
+  defaultRoomData: RoomData = {
+    key: '',
+    users: [],
+    moderator: '',
+    connectedUsers: {},
+    settings: {
+      challengeCategories: Object.keys(CHALLENGE_CATEGORIES),
+      difficultyLevel: 'intermediate',
+      hintsEnabled: true,
+      gameMode: 'practice',
+      aiAssistanceLevel: 'basic',
+      timeLimit: 60 * 60, // 1 hour in seconds
+      scoringMultiplier: 1,
+    },
+    scores: {},
+    challengeHistory: [],
+    gameSettings: {
+      isActive: false,
+      currentRound: 0,
+      totalRounds: 1,
+    },
+  };
 
   constructor(state: DurableObjectState, env: Env) {
     this.state = state;
@@ -32,20 +56,7 @@ export class Room {
     this.state.blockConcurrencyWhile(async () => {
       let roomData = await this.state.storage.get<RoomData>('roomData');
       if (!roomData) {
-        roomData = {
-          key: '',
-          users: [],
-          moderator: '',
-          connectedUsers: {},
-          settings: {},
-          scores: {},
-          challengeHistory: [],
-          gameSettings: {
-            isActive: false,
-            currentRound: 0,
-            totalRounds: 1,
-          },
-        };
+        roomData = this.defaultRoomData;
         await this.state.storage.put('roomData', roomData);
       } else if (!roomData.connectedUsers) {
         roomData.connectedUsers = {};
@@ -114,13 +125,11 @@ export class Room {
         }
 
         roomData = {
+          ...this.defaultRoomData,
           key: roomKey,
           users: [moderator],
           moderator,
           connectedUsers: { [moderator]: true },
-          settings: {},
-          scores: {},
-          challengeHistory: [],
           gameSettings: {
             isActive: false,
             currentRound: 0,
