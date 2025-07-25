@@ -13,8 +13,8 @@ import {
 import {
   DIFFICULTY_COLORS,
   DIFFICULTY_LABELS,
-  CATEGORY_ICONS,
-  ALL_CATEGORIES,
+  getCategoryIcon,
+  getCategoryLabel,
 } from '../data-model/challenge';
 
 interface ChallengePanelProps {
@@ -56,9 +56,31 @@ export function ChallengePanel({
       : 2
   );
   const [isGeneratingChallenge, setIsGeneratingChallenge] = useState(false);
+  const [workspaceContent, setWorkspaceContent] = useState('');
+  const [generationProgress, setGenerationProgress] = useState(0);
+  const [estimatedTime, setEstimatedTime] = useState<number | null>(null);
+  const [flagValidationError, setFlagValidationError] = useState('');
+  const [copiedResource, setCopiedResource] = useState<number | null>(null);
 
   const intervalRef = useRef<number | null>(null);
   const editorRef = useRef<HTMLTextAreaElement>(null);
+  const flagInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    const savedContent = localStorage.getItem('challenge-workspace');
+    if (savedContent) {
+      setWorkspaceContent(savedContent);
+    }
+  }, []);
+
+  useEffect(() => {
+    const saveTimeout = setTimeout(() => {
+      if (workspaceContent) {
+        localStorage.setItem('challenge-workspace', workspaceContent);
+      }
+    }, 1000);
+    return () => clearTimeout(saveTimeout);
+  }, [workspaceContent]);
 
   useEffect(() => {
     setSelectedCategory(settings.challengeCategories?.[0] || 'web');
@@ -85,6 +107,9 @@ export function ChallengePanel({
         setFlagInput('');
         setLastHintResponse('');
         setIsGeneratingChallenge(false);
+        setGenerationProgress(100);
+        setEstimatedTime(data.challenge.metadata?.estimatedTime || null);
+        setFlagValidationError('');
         if (onChallengeUpdate) {
           onChallengeUpdate(data.challenge);
         }
@@ -104,17 +129,21 @@ export function ChallengePanel({
       setIsSubmitting(false);
     };
 
-    const handleFlagIncorrect = () => {
+    const handleFlagIncorrect = (data: WebSocketMessage) => {
       setSubmissions((prev) => [
         ...prev,
         {
           flag: flagInput,
           timestamp: Date.now(),
           correct: false,
+          message: data.message,
+          attemptsRemaining: data.attemptsRemaining,
         },
       ]);
       setFlagInput('');
       setIsSubmitting(false);
+
+      setTimeout(() => flagInputRef.current?.focus(), 100);
     };
 
     const handleHintReceived = (data: WebSocketMessage) => {
@@ -123,6 +152,10 @@ export function ChallengePanel({
         setHints((prev) => [...prev, data.hint!]);
         setHintsUsed((prev) => prev + 1);
         if (data.maxHints) setMaxHints(data.maxHints);
+
+        if (data.penaltyApplied) {
+          console.log(`Hint penalty applied: -${data.penaltyApplied} points`);
+        }
       }
       setIsRequestingHint(false);
     };
@@ -172,6 +205,14 @@ export function ChallengePanel({
     }
 
     setIsGeneratingChallenge(true);
+    setGenerationProgress(0);
+
+    const progressInterval = setInterval(() => {
+      setGenerationProgress((prev) => {
+        if (prev >= 90) return prev;
+        return prev + Math.random() * 10;
+      });
+    }, 500);
 
     try {
       startChallenge(selectedCategory, selectedDifficulty);
@@ -179,13 +220,25 @@ export function ChallengePanel({
       console.error('Error starting challenge:', error);
       alert('Failed to start challenge');
       setIsGeneratingChallenge(false);
+      clearInterval(progressInterval);
     }
   };
 
   const handleSubmitFlag = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (!flagInput.trim() || !currentChallenge) {
+    const trimmedFlag = flagInput.trim();
+    if (!trimmedFlag || !currentChallenge) {
+      return;
+    }
+
+    setFlagValidationError('');
+    if (trimmedFlag.length < 3) {
+      setFlagValidationError('Flag is too short');
+      return;
+    }
+    if (trimmedFlag.length > 100) {
+      setFlagValidationError('Flag is too long');
       return;
     }
 
@@ -197,7 +250,7 @@ export function ChallengePanel({
     setIsSubmitting(true);
 
     try {
-      submitFlag(flagInput.trim());
+      submitFlag(trimmedFlag);
     } catch (error) {
       console.error('Error submitting flag:', error);
       alert('Failed to submit flag');
@@ -245,27 +298,66 @@ export function ChallengePanel({
     );
   };
 
-  const getCategoryIcon = (category: string): string => {
-    return CATEGORY_ICONS[category as keyof typeof CATEGORY_ICONS] || '❓';
-  };
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.ctrlKey || e.metaKey) {
+        if (e.key === 'Enter' && flagInput.trim() && !isSubmitting) {
+          e.preventDefault();
+          handleSubmitFlag(e as any);
+        } else if (e.key === 'h' && currentChallenge && hintsUsed < maxHints) {
+          e.preventDefault();
+          handleRequestHint();
+        }
+      }
+    };
 
-  // TODO: Chaallenges should really come from the API.
-  const availableCategories = ALL_CATEGORIES.filter((cat) =>
-    settings.challengeCategories?.includes(cat.id)
-  );
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [flagInput, isSubmitting, currentChallenge, hintsUsed, maxHints]);
+
+  const availableCategories = settings.challengeCategories || [];
+
+  const copyToClipboard = async (text: string, index: number) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopiedResource(index);
+      setTimeout(() => setCopiedResource(null), 2000);
+    } catch (error) {
+      console.error('Failed to copy to clipboard:', error);
+    }
+  };
 
   if (!currentChallenge) {
     return (
       <div className="flex flex-col items-center justify-center h-full bg-cyber-surface rounded-lg p-8 shadow-md">
         {isGeneratingChallenge ? (
           <div className="flex flex-col items-center">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-cyber-cyan-600 mb-4"></div>
+            <div className="relative mb-6">
+              <div className="animate-spin rounded-full h-16 w-16 border-4 border-cyber-cyan-600/20 border-t-cyber-cyan-600"></div>
+              <div className="absolute inset-0 flex items-center justify-center">
+                <span className="text-cyber-cyan-600 font-bold text-sm">
+                  {Math.round(generationProgress)}%
+                </span>
+              </div>
+            </div>
             <h2 className="text-2xl font-bold text-cyber-text-primary text-center mb-2">
               🤖 Generating Challenge...
             </h2>
-            <p className="text-cyber-text-secondary text-center">
-              AI is creating a custom challenge for you. This may take a few moments.
+            <p className="text-cyber-text-secondary text-center mb-4">
+              AI is creating a custom {selectedCategory} challenge at{' '}
+              {getDifficultyLabel(selectedDifficulty)} difficulty.
             </p>
+            <div className="w-full max-w-xs bg-cyber-bg rounded-full h-2">
+              <div
+                className="bg-cyber-cyan-600 h-2 rounded-full transition-all duration-300"
+                style={{ width: `${generationProgress}%` }}
+              ></div>
+            </div>
+            {estimatedTime && (
+              <p className="text-xs text-cyber-text-secondary mt-2">
+                Estimated solve time: {estimatedTime} minutes
+              </p>
+            )}
           </div>
         ) : (
           <>
@@ -288,10 +380,11 @@ export function ChallengePanel({
                     value={selectedCategory}
                     onChange={(e) => setSelectedCategory(e.target.value)}
                     className="w-full px-3 py-2 bg-cyber-bg border border-cyber-border rounded-md text-cyber-text-primary"
+                    disabled={false}
                   >
                     {availableCategories.map((cat) => (
-                      <option key={cat.id} value={cat.id}>
-                        {cat.label}
+                      <option key={cat} value={cat}>
+                        {getCategoryLabel(cat)}
                       </option>
                     ))}
                   </select>
@@ -344,22 +437,27 @@ export function ChallengePanel({
           {currentChallenge.title}
         </h2>
 
-        <div className="flex items-center">
-          <span className="category-badge text-cyber-text-secondary mr-2">
+        <div className="flex items-center gap-2">
+          <span className="category-badge text-cyber-text-secondary px-2 py-1 bg-cyber-bg rounded-md text-sm">
             {getCategoryIcon(currentChallenge.category)}{' '}
-            {currentChallenge.category.toUpperCase()}
+            {getCategoryLabel(currentChallenge.category)}
           </span>
           <span
-            className="difficulty-badge text-white px-2 py-1 rounded-md"
+            className="difficulty-badge text-white px-2 py-1 rounded-md text-sm font-medium"
             style={{
               backgroundColor: getDifficultyColor(currentChallenge.difficulty),
             }}
           >
             {getDifficultyLabel(currentChallenge.difficulty)}
           </span>
-          <span className="time-badge text-cyber-text-secondary">
+          <span className="time-badge text-cyber-text-secondary px-2 py-1 bg-cyber-bg rounded-md text-sm">
             ⏱️ {formatTime(timeElapsed)}
           </span>
+          {estimatedTime && (
+            <span className="estimate-badge text-cyber-text-secondary px-2 py-1 bg-cyber-bg rounded-md text-sm">
+              📊 Est: {estimatedTime}m
+            </span>
+          )}
         </div>
       </div>
 
@@ -375,31 +473,45 @@ export function ChallengePanel({
                 <h4 className="text-lg font-semibold text-cyber-text-primary mb-2">
                   📎 Resources:
                 </h4>
-                <ul className="list-disc list-inside text-cyber-text-secondary">
+                <div className="space-y-2">
                   {currentChallenge.metadata.resources.map(
                     (resource, index) => {
                       const isUrl =
                         resource.startsWith('http://') ||
                         resource.startsWith('https://');
                       return (
-                        <li key={index}>
-                          {isUrl ? (
-                            <a
-                              href={resource}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="text-cyber-cyan-600 hover:underline"
-                            >
-                              {resource}
-                            </a>
-                          ) : (
-                            resource
-                          )}
-                        </li>
+                        <div
+                          key={index}
+                          className="flex items-center justify-between bg-cyber-bg p-2 rounded-md"
+                        >
+                          <div className="flex-1">
+                            {isUrl ? (
+                              <a
+                                href={resource}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-cyber-cyan-600 hover:underline break-all"
+                              >
+                                {resource}
+                              </a>
+                            ) : (
+                              <span className="text-cyber-text-secondary break-all">
+                                {resource}
+                              </span>
+                            )}
+                          </div>
+                          <button
+                            onClick={() => copyToClipboard(resource, index)}
+                            className="ml-2 px-2 py-1 text-xs bg-cyber-cyan-600 text-white rounded hover:bg-cyber-cyan-700 transition-colors"
+                            title="Copy to clipboard"
+                          >
+                            {copiedResource === index ? '✓' : '📋'}
+                          </button>
+                        </div>
                       );
                     }
                   )}
-                </ul>
+                </div>
               </div>
             )}
         </div>
@@ -421,10 +533,25 @@ export function ChallengePanel({
 
           <textarea
             ref={editorRef}
-            className="challenge-editor w-full p-3 bg-cyber-bg border border-cyber-border rounded-md text-cyber-text-primary"
-            placeholder="Use this space for notes, code, or analysis..."
+            value={workspaceContent}
+            onChange={(e) => setWorkspaceContent(e.target.value)}
+            className="challenge-editor w-full p-3 bg-cyber-bg border border-cyber-border rounded-md text-cyber-text-primary font-mono text-sm"
+            placeholder="Use this space for notes, code, or analysis...
+Tip: Your work is automatically saved!"
             rows={8}
           />
+          <div className="workspace-footer flex justify-between items-center mt-2">
+            <span className="text-xs text-cyber-text-secondary">
+              Workspace auto-saved • {workspaceContent.length} characters
+            </span>
+            <button
+              onClick={() => setWorkspaceContent('')}
+              className="text-xs text-cyber-text-secondary hover:text-cyber-text-primary"
+              title="Clear workspace"
+            >
+              Clear
+            </button>
+          </div>
         </div>
 
         {hints.length > 0 && (
@@ -434,7 +561,10 @@ export function ChallengePanel({
             </h3>
             <div className="hints-list space-y-2">
               {hints.map((hint, index) => (
-                <div key={index} className="hint-item flex gap-2 p-3 bg-cyber-bg/50 rounded-md">
+                <div
+                  key={index}
+                  className="hint-item flex gap-2 p-3 bg-cyber-bg/50 rounded-md"
+                >
                   <span className="hint-number text-sm text-cyber-text-secondary font-mono">
                     #{index + 1}
                   </span>
@@ -456,16 +586,20 @@ export function ChallengePanel({
               {submissions.slice(-3).map((submission, index) => (
                 <div
                   key={index}
-                  className={`submission-item flex justify-between items-center p-3 rounded-md ${
-                    submission.correct ? 'bg-green-900/20 border border-green-600/30' : 'bg-red-900/20 border border-red-600/30'
+                  className={`submission-item p-3 rounded-md ${
+                    submission.correct
+                      ? 'bg-green-900/20 border border-green-600/30'
+                      : 'bg-red-900/20 border border-red-600/30'
                   }`}
                 >
-                  <span className="submission-flag text-sm text-cyber-text-primary font-mono">
-                    {submission.flag}
-                  </span>
-                  <span className="submission-status text-sm font-medium">
-                    {submission.correct ? '✅ Correct' : '❌ Incorrect'}
-                  </span>
+                  <div className="flex justify-between items-center">
+                    <span className="submission-flag text-sm text-cyber-text-primary font-mono break-all">
+                      {submission.flag}
+                    </span>
+                    <span className="submission-status text-sm font-medium ml-2 flex-shrink-0">
+                      {submission.correct ? '✅ Correct' : '❌ Incorrect'}
+                    </span>
+                  </div>
                 </div>
               ))}
             </div>
@@ -476,20 +610,47 @@ export function ChallengePanel({
       <div className="challenge-actions mt-6 space-y-4">
         <form onSubmit={handleSubmitFlag} className="flag-submission">
           <div className="flag-input-group space-y-3">
-            <input
-              type="text"
-              value={flagInput}
-              onChange={(e) => setFlagInput(e.target.value)}
-              placeholder="Enter flag (e.g., flag{your_answer_here})"
-              className="flag-input w-full p-3 bg-cyber-bg border border-cyber-border rounded-md text-cyber-text-primary"
-              disabled={isSubmitting}
-            />
+            <div className="relative">
+              <input
+                ref={flagInputRef}
+                type="text"
+                value={flagInput}
+                onChange={(e) => {
+                  setFlagInput(e.target.value);
+                  setFlagValidationError('');
+                }}
+                placeholder="Enter flag (e.g., flag{your_answer_here})"
+                className={`flag-input w-full p-3 bg-cyber-bg border rounded-md text-cyber-text-primary font-mono ${
+                  flagValidationError
+                    ? 'border-red-500 focus:border-red-500'
+                    : 'border-cyber-border focus:border-cyber-cyan-600'
+                } focus:outline-none focus:ring-2 focus:ring-cyber-cyan-600/20`}
+                disabled={isSubmitting}
+              />
+              {flagValidationError && (
+                <div className="absolute -bottom-6 left-0 text-xs text-red-400">
+                  {flagValidationError}
+                </div>
+              )}
+            </div>
+            <div className="text-xs text-cyber-text-secondary">
+              Tip: Use Ctrl+Enter to submit quickly
+            </div>
             <button
               type="submit"
-              className="submit-flag-btn w-full px-4 py-3 bg-cyber-cyan-600 text-white rounded-md font-semibold hover:bg-cyber-cyan-700 transition-colors"
-              disabled={!flagInput.trim() || isSubmitting}
+              className="submit-flag-btn w-full px-4 py-3 bg-cyber-cyan-600 text-white rounded-md font-semibold hover:bg-cyber-cyan-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              disabled={
+                !flagInput.trim() || isSubmitting || !!flagValidationError
+              }
             >
-              {isSubmitting ? '⏳ Submitting...' : '🏁 Submit Flag'}
+              {isSubmitting ? (
+                <span className="flex items-center justify-center">
+                  <div className="animate-spin rounded-full h-4 w-4 border-2 border-white/20 border-t-white mr-2"></div>
+                  Submitting...
+                </span>
+              ) : (
+                '🏁 Submit Flag'
+              )}
             </button>
           </div>
         </form>
@@ -497,7 +658,7 @@ export function ChallengePanel({
         <div className="action-buttons space-y-3">
           <button
             onClick={handleRequestHint}
-            className="hint-btn w-full px-4 py-2 bg-cyber-yellow-600 text-white rounded-md font-semibold hover:bg-cyber-yellow-700 transition-colors"
+            className="hint-btn w-full px-4 py-2 bg-cyber-yellow-600 text-white rounded-md font-semibold hover:bg-cyber-yellow-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             disabled={
               hintsUsed >= maxHints ||
               isRequestingHint ||
@@ -508,12 +669,17 @@ export function ChallengePanel({
                 ? 'Hints are disabled for this room'
                 : hintsUsed >= maxHints
                 ? 'No more hints available'
-                : 'Request a hint'
+                : 'Request a hint (Ctrl+H)'
             }
           >
-            {isRequestingHint
-              ? '⏳ Getting hint...'
-              : `💡 Hint (${hintsUsed}/${maxHints})`}
+            {isRequestingHint ? (
+              <span className="flex items-center justify-center">
+                <div className="animate-spin rounded-full h-4 w-4 border-2 border-white/20 border-t-white mr-2"></div>
+                Getting hint...
+              </span>
+            ) : (
+              `💡 Hint (${hintsUsed}/${maxHints})`
+            )}
           </button>
 
           {isRoomModerator && (

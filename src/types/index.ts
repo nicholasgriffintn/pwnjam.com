@@ -82,6 +82,8 @@ export interface WebSocketMessage {
   challengeId?: string;
   category?: string;
   difficulty?: number;
+  penaltyApplied?: number;
+  attemptsRemaining?: number;
 }
 
 export interface LeaderboardEntry {
@@ -91,6 +93,24 @@ export interface LeaderboardEntry {
   challengesSolved: number;
   averageTime: number;
   efficiency: number;
+}
+
+export interface Achievement {
+  id: string;
+  name: string;
+  description: string;
+  category: string;
+  icon: string;
+  points: number;
+  criteria: {
+    type: string;
+    value: number;
+    category?: string;
+    timeframe?: number;
+  };
+  unlocked: boolean;
+  progress: number;
+  enabled: boolean;
 }
 
 export type WebSocketMessageType =
@@ -112,10 +132,5 @@ export type WebSocketMessageType =
   | 'leaderboardUpdated'
   | 'scoreUpdated'
   | 'disconnected'
-  | 'error'
   | 'initialize'
-  | 'userJoined'
-  | 'userLeft'
-  | 'userConnectionStatus'
-  | 'newModerator'
-  | 'settingsUpdated';
+  | 'newModerator';

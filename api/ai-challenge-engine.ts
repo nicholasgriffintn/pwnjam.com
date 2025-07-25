@@ -1,127 +1,122 @@
-import type { Ai } from '@cloudflare/workers-types';
+import type { Ai, KVNamespace } from '@cloudflare/workers-types';
 
 import type { ApiConfig } from './config';
-
-import type {
-  Challenge,
-  ChallengeGenerationRequest,
-  HintRequest,
-} from './types';
+import type { Challenge } from './types';
 import { CHALLENGE_TEMPLATES } from './data-model/challenge';
+import { sanitizeInput } from './utils/input';
+
+class AIGenerationError extends Error {
+  constructor(
+    message: string,
+    public code: string,
+    public retryable: boolean = false
+  ) {
+    super(message);
+    this.name = 'AIGenerationError';
+  }
+}
 
 export class AIChallengeEngine {
   private ai: Ai;
   private config: ApiConfig;
+  private readonly AI_TIMEOUT = 30000; // 30 seconds
 
-  constructor(ai: Ai, config: ApiConfig) {
+  constructor(ai: Ai, config: ApiConfig, kv: KVNamespace) {
     this.ai = ai;
     this.config = config;
   }
 
-  async generateChallenge(
-    request: ChallengeGenerationRequest
-  ): Promise<Challenge> {
-    const template = this.selectTemplate(request.category, request.difficulty);
+  async generateChallenge(request): Promise<Challenge | undefined> {
+    const validatedRequest = request;
+
+    const template = this.selectTemplate(
+      validatedRequest.category,
+      validatedRequest.difficulty
+    );
     const challengeId = this.generateChallengeId();
 
-    const prompt = this.buildChallengePrompt(template, request);
+    const prompt = this.buildChallengePrompt(template, validatedRequest);
     const schema = this.buildChallengePromptSchema();
 
     try {
-      const response = await this.ai.run(
-        // @ts-ignore
-        this.config.ai.textModel,
-        {
-          messages: [
-            {
-              role: 'system',
-              content: `You are an expert CTF challenge creator. Create educational cybersecurity challenges that are fair, solvable, and teach important security concepts. Always include a clear flag in the format flag{...} and provide educational context.`,
-            },
-            {
-              role: 'user',
-              content: prompt,
-            },
-          ],
-          guided_json: schema,
-          max_tokens: 30000,
-          temperature: 0.7,
-        },
-        {
-          gateway: {
-            id: this.config.ai.gateway,
-          },
-        }
+      const aiChallenge = await this.generateFromAI(
+        prompt,
+        schema,
+        validatedRequest
       );
 
-      // @ts-ignore
-      const challengeData = this.parseChallengeResponse(response.response);
-
-      const challenge: Challenge = {
-        id: challengeId,
-        title: challengeData.title || `${request.category} Challenge`,
-        description: challengeData.description,
-        category: request.category,
-        difficulty: request.difficulty,
-        flag: challengeData.flag,
-        hints: challengeData.hints || [],
-        metadata: {
-          author: 'AI Challenge Engine',
-          tags: [request.category, `difficulty-${request.difficulty}`],
-          estimatedTime: this.estimateTime(request.difficulty),
-          resources: challengeData.resources || [],
-        },
-        attempts: 0,
-        hintsUsed: 0,
-      };
-
-      return this.validateChallenge(challenge);
+      return this.convertToChallenge(aiChallenge, challengeId);
     } catch (error) {
       console.error('AI challenge generation failed:', error);
-      return this.generateFallbackChallenge(request);
+      if (error instanceof AIGenerationError && error.retryable) {
+        throw error;
+      }
+      return undefined;
     }
   }
 
-  async generateHint(request: HintRequest): Promise<string> {
-    const hintLevel = request.hintsUsed + 1;
+  async generateHint(request): Promise<string | undefined> {
+    const validatedRequest = this.validateHintRequest(request);
 
-    const prompt = `Generate hint #${hintLevel} for a CTF challenge. 
-    Previous hints: ${request.previousHints?.join(', ') || 'None'}
-    Current progress: ${request.currentProgress || 'Not provided'}
+    const hintLevel = validatedRequest.hintLevel;
+    const sanitizedUserId = sanitizeInput(validatedRequest.userId);
+
+    const prompt = `Generate hint #${hintLevel} for a CTF challenge.
+    User ID: ${sanitizedUserId}
+    Challenge ID: ${sanitizeInput(validatedRequest.challengeId)}
     
     Make the hint progressively more helpful but not give away the answer completely.
-    Hint level ${hintLevel} should ${this.getHintLevelGuidance(hintLevel)}.`;
+    Hint level ${hintLevel} should ${this.getHintLevelGuidance(hintLevel)}.
+    
+    Important: Provide educational value and maintain engagement.`;
 
     try {
-      const response = await this.ai.run(
-        // @ts-ignore
-        this.config.ai.textModel,
-        {
-          messages: [
-            {
-              role: 'system',
-              content:
-                'You are a helpful CTF mentor. Provide educational hints that guide learning without giving away answers.',
-            },
-            {
-              role: 'user',
-              content: prompt,
-            },
-          ],
-          max_tokens: 30000,
-          temperature: 0.5,
-        },
-        {
-          gateway: {
-            id: this.config.ai.gateway,
+      const response = await Promise.race([
+        this.ai.run(
+          this.config.ai.textModel as any,
+          {
+            messages: [
+              {
+                role: 'system',
+                content:
+                  'You are a helpful CTF mentor. Provide educational hints that guide learning without giving away answers. Keep hints concise and actionable.',
+              },
+              {
+                role: 'user',
+                content: prompt,
+              },
+            ],
+            max_tokens: 500,
+            temperature: 0.6,
           },
-        }
-      );
+          {
+            gateway: {
+              id: this.config.ai.gateway,
+            },
+          }
+        ),
+        new Promise((_, reject) =>
+          setTimeout(
+            () =>
+              reject(
+                new AIGenerationError('Hint generation timeout', 'TIMEOUT')
+              ),
+            this.AI_TIMEOUT
+          )
+        ),
+      ]);
 
-      // @ts-ignore
-      return this.cleanHintResponse(response.response);
+      return this.cleanHintResponse((response as any).response);
     } catch (error) {
       console.error('AI hint generation failed:', error);
-      return this.generateFallbackHint(hintLevel);
+      if (error instanceof AIGenerationError && error.code === 'TIMEOUT') {
+        throw new AIGenerationError(
+          'Hint generation is taking too long. Please try again.',
+          'TIMEOUT',
+          true
+        );
+      }
+      return undefined;
     }
   }
 
@@ -136,10 +131,7 @@ export class AIChallengeEngine {
     return categoryTemplates[templateIndex];
   }
 
-  private buildChallengePrompt(
-    template: any,
-    request: ChallengeGenerationRequest
-  ): string {
+  private buildChallengePrompt(template: any, request): string {
     const difficultyText = this.getDifficultyText(request.difficulty);
 
     return `${template.basePrompt} with ${difficultyText} difficulty level.
@@ -187,102 +179,63 @@ export class AIChallengeEngine {
     };
   }
 
-  private parseChallengeResponse(response: string): any {
+  private async generateFromAI(
+    prompt: string,
+    schema: Record<string, any>,
+    request
+  ): Promise<any> {
+    const response = await Promise.race([
+      this.ai.run(
+        this.config.ai.textModel as any,
+        {
+          messages: [
+            {
+              role: 'system',
+              content: `You are an expert CTF challenge creator. Create educational cybersecurity challenges that are fair, solvable, and teach important security concepts. Always include a clear flag in the format flag{...} and provide educational context. Ensure difficulty matches the requested level ${request.difficulty}/5.`,
+            },
+            {
+              role: 'user',
+              content: prompt,
+            },
+          ],
+          guided_json: schema,
+          max_tokens: 2000,
+          temperature: 0.7,
+        },
+        {
+          gateway: {
+            id: this.config.ai.gateway,
+          },
+        }
+      ),
+      new Promise((_, reject) =>
+        setTimeout(
+          () =>
+            reject(new AIGenerationError('AI generation timeout', 'TIMEOUT')),
+          this.AI_TIMEOUT
+        )
+      ),
+    ]);
+
+    return this.parseAndValidateResponse((response as any).response, request);
+  }
+
+  private parseAndValidateResponse(response: string, request) {
+    let challengeData: any;
+
     try {
       const jsonMatch = response.match(/\{[\s\S]*\}/);
       if (jsonMatch) {
-        try {
-          return JSON.parse(jsonMatch[0]);
-        } catch (jsonError) {
-          console.error('Failed to parse JSON from AI response:', jsonError);
-        }
+        challengeData = JSON.parse(jsonMatch[0]);
+      } else {
+        throw new Error('No JSON found in response');
       }
     } catch (error) {
-      console.error('Failed to parse AI response as JSON:', error);
+      console.error('Failed to parse AI response:', error);
+      throw new AIGenerationError('Invalid AI response format', 'PARSE_ERROR');
     }
 
-    return {
-      title: 'Generated Challenge',
-      description: response,
-      flag: 'flag{ai_generated_challenge}',
-      hints: [
-        'Look for common vulnerability patterns',
-        'Check the source carefully',
-        'Try different input methods',
-      ],
-    };
-  }
-
-  private validateChallenge(challenge: Challenge): Challenge {
-    if (!challenge.flag.startsWith('flag{') || !challenge.flag.endsWith('}')) {
-      challenge.flag = `flag{${challenge.flag.replace(/^flag\{|\}$/g, '')}}`;
-    }
-
-    if (!challenge.description || challenge.description.length < 50) {
-      challenge.description = `A ${challenge.category} challenge with difficulty level ${challenge.difficulty}. ${challenge.description}`;
-    }
-
-    return challenge;
-  }
-
-  private generateFallbackChallenge(
-    request: ChallengeGenerationRequest
-  ): Challenge {
-    const challengeId = this.generateChallengeId();
-    const fallbackChallenges = {
-      web: {
-        title: 'Basic Web Challenge',
-        description:
-          'Find the hidden flag in this web application. Look for common web vulnerabilities.',
-        flag: 'flag{basic_web_challenge}',
-      },
-      crypto: {
-        title: 'Caesar Cipher',
-        description: 'Decrypt this Caesar cipher: "IODJ{FDHVDU_FLSKHU}"',
-        flag: 'flag{caesar_cipher}',
-      },
-      misc: {
-        title: 'Logic Challenge',
-        description: 'Solve this programming puzzle to get the flag.',
-        flag: 'flag{logic_puzzle}',
-      },
-    };
-
-    const fallback =
-      fallbackChallenges[request.category as keyof typeof fallbackChallenges] ||
-      fallbackChallenges.misc;
-
-    return {
-      id: challengeId,
-      title: fallback.title,
-      description: fallback.description,
-      category: request.category,
-      difficulty: request.difficulty,
-      flag: fallback.flag,
-      hints: [
-        'Start by understanding the challenge type',
-        'Look for patterns or common techniques',
-        'Consider the challenge category for clues',
-      ],
-      metadata: {
-        author: 'Fallback Generator',
-        tags: [request.category],
-        estimatedTime: this.estimateTime(request.difficulty),
-      },
-      attempts: 0,
-      hintsUsed: 0,
-    };
-  }
-
-  private generateFallbackHint(hintLevel: number): string {
-    const fallbackHints = [
-      'Think about the challenge category and common approaches used.',
-      'Look more carefully at the details provided in the challenge.',
-      'Consider using online tools or resources appropriate for this challenge type.',
-      'Review the challenge description for any subtle clues you might have missed.',
-    ];
-
-    return fallbackHints[Math.min(hintLevel - 1, fallbackHints.length - 1)];
+    return challengeData;
   }
 
   private getDifficultyText(difficulty: number): string {
@@ -291,7 +244,59 @@ export class AIChallengeEngine {
   }
 
   private estimateTime(difficulty: number): number {
-    return Math.min(15 + difficulty * 10, 60);
+    const baseTime = [5, 15, 30, 60, 120]; // minutes for each difficulty
+    return baseTime[Math.min(difficulty - 1, baseTime.length - 1)];
+  }
+
+  private convertToChallenge(aiChallenge, challengeId: string): Challenge {
+    return {
+      id: challengeId,
+      title: aiChallenge.title,
+      description: aiChallenge.description,
+      category: aiChallenge.category,
+      difficulty: aiChallenge.difficulty,
+      flag: aiChallenge.flag,
+      hints: aiChallenge.hints,
+      metadata: {
+        author: 'AI Challenge Engine',
+        tags: [aiChallenge.category, `difficulty-${aiChallenge.difficulty}`],
+        estimatedTime: aiChallenge.timeEstimate,
+        resources: Array.isArray(aiChallenge.resources)
+          ? aiChallenge.resources.map((r: any) =>
+              typeof r === 'string' ? r : r.name || r.url || ''
+            )
+          : [],
+      },
+      attempts: 0,
+      hintsUsed: 0,
+    };
+  }
+
+  private validateHintRequest(request) {
+    if (!request.challengeId || !request.userId || !request.roomId) {
+      throw new AIGenerationError(
+        'Missing required fields: challengeId, userId, or roomId',
+        'VALIDATION_ERROR'
+      );
+    }
+
+    if (
+      typeof request.hintLevel !== 'number' ||
+      request.hintLevel < 1 ||
+      request.hintLevel > 5
+    ) {
+      throw new AIGenerationError(
+        'Invalid hint level. Must be between 1 and 5',
+        'VALIDATION_ERROR'
+      );
+    }
+
+    return {
+      challengeId: sanitizeInput(request.challengeId),
+      userId: sanitizeInput(request.userId),
+      roomId: sanitizeInput(request.roomId),
+      hintLevel: request.hintLevel,
+    };
   }
 
   private getHintLevelGuidance(hintLevel: number): string {

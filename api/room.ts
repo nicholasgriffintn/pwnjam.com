@@ -634,9 +634,17 @@ export class Room {
         });
       } catch (error) {
         console.error('Error generating hint:', error);
+        let errorMessage = 'Failed to generate hint. Please try again.';
+        
+        if (error instanceof RateLimitError) {
+          errorMessage = error.message;
+        } else if (error instanceof ValidationError) {
+          errorMessage = `Invalid request: ${error.message}`;
+        }
+        
         this.sendToUser(userName, {
           type: 'error',
-          error: 'Failed to generate hint. Please try again.',
+          error: errorMessage,
         });
       }
     });

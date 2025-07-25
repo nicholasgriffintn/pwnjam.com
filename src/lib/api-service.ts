@@ -496,6 +496,7 @@ export async function getUserProfile(userId: string): Promise<any> {
   }
 }
 
+
 /**
  * Get available challenge categories
  * @returns {Promise<any>} - The challenge categories
@@ -520,6 +521,34 @@ export async function getChallengeCategories(): Promise<any> {
     return data.categories;
   } catch (error) {
     console.error('Error getting challenge categories:', error);
+    throw error;
+  }
+}
+
+/**
+ * Get available achievements
+ * @returns {Promise<any>} - The achievements data
+ */
+export async function getAchievements(): Promise<any> {
+  try {
+    const response = await fetch(`${api.baseUrl}/achievements`, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(
+        errorData.error || `Failed to get achievements: ${response.status}`
+      );
+    }
+
+    const data = await response.json();
+    return data.achievements;
+  } catch (error) {
+    console.error('Error getting achievements:', error);
     throw error;
   }
 }

@@ -289,65 +289,6 @@ async function handleApiRequest(
     }
   }
 
-  // Challenge categories endpoint
-  if (
-    pathWithoutPrefix === 'challenges/categories' &&
-    request.method === 'GET'
-  ) {
-    const categories = [
-      {
-        id: 'web',
-        name: 'Web Application Security',
-        description: 'Web vulnerabilities and exploits',
-      },
-      {
-        id: 'crypto',
-        name: 'Cryptography',
-        description: 'Encryption, hashing, and cryptanalysis',
-      },
-      {
-        id: 'pwn',
-        name: 'Binary Exploitation',
-        description: 'Buffer overflows and binary exploits',
-      },
-      {
-        id: 'reverse',
-        name: 'Reverse Engineering',
-        description: 'Analyzing and understanding binaries',
-      },
-      {
-        id: 'forensics',
-        name: 'Digital Forensics',
-        description: 'Investigating digital evidence',
-      },
-      {
-        id: 'misc',
-        name: 'Miscellaneous',
-        description: 'Programming, logic, and other challenges',
-      },
-      {
-        id: 'steganography',
-        name: 'Steganography',
-        description: 'Hidden information in files',
-      },
-      {
-        id: 'osint',
-        name: 'Open Source Intelligence',
-        description: 'Information gathering from public sources',
-      },
-    ];
-
-    return new Response(
-      JSON.stringify({
-        success: true,
-        categories,
-      }),
-      {
-        headers: { 'Content-Type': 'application/json' },
-      }
-    ) as unknown as CfResponse;
-  }
-
   return new Response(JSON.stringify({ error: 'Not found' }), {
     status: 404,
     headers: { 'Content-Type': 'application/json' },

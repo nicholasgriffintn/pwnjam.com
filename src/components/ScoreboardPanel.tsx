@@ -21,6 +21,16 @@ export function ScoreboardPanel({
   >([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string>('');
+  const [sortBy, setSortBy] = useState<
+    'score' | 'solved' | 'efficiency' | 'time'
+  >('score');
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
+  const [filterMinScore, setFilterMinScore] = useState<number>(0);
+  const [selectedUser, setSelectedUser] = useState<string | null>(null);
+  const [showFilters, setShowFilters] = useState(false);
+  const [animatingScores, setAnimatingScores] = useState<Set<string>>(
+    new Set()
+  );
 
   const calculateEfficiency = (score: UserScore): number => {
     if (score.challengesSolved === 0) return 0;
@@ -35,9 +45,47 @@ export function ScoreboardPanel({
     return Math.floor(pointsPerMinute * hintEfficiency);
   };
 
-  // Convert room scores to leaderboard format
-  const roomLeaderboard: LeaderboardEntry[] = Object.values(roomScores)
-    .map((score, index) => ({
+  // Sort and filter leaderboard
+  const sortLeaderboard = (
+    leaderboard: LeaderboardEntry[]
+  ): LeaderboardEntry[] => {
+    const filtered = leaderboard.filter(
+      (entry) => entry.totalScore >= filterMinScore
+    );
+
+    const sorted = [...filtered].sort((a, b) => {
+      let aValue: number, bValue: number;
+
+      switch (sortBy) {
+        case 'score':
+          aValue = a.totalScore;
+          bValue = b.totalScore;
+          break;
+        case 'solved':
+          aValue = a.challengesSolved;
+          bValue = b.challengesSolved;
+          break;
+        case 'efficiency':
+          aValue = a.efficiency;
+          bValue = b.efficiency;
+          break;
+        case 'time':
+          aValue = a.averageTime;
+          bValue = b.averageTime;
+          break;
+        default:
+          aValue = a.totalScore;
+          bValue = b.totalScore;
+      }
+
+      return sortOrder === 'desc' ? bValue - aValue : aValue - bValue;
+    });
+
+    return sorted.map((entry, index) => ({ ...entry, rank: index + 1 }));
+  };
+
+  const roomLeaderboard: LeaderboardEntry[] = sortLeaderboard(
+    Object.values(roomScores).map((score, index) => ({
       rank: index + 1,
       userId: score.userId,
       totalScore: score.totalScore,
@@ -48,8 +96,7 @@ export function ScoreboardPanel({
           : 0,
       efficiency: calculateEfficiency(score),
     }))
-    .sort((a, b) => b.totalScore - a.totalScore)
-    .map((entry, index) => ({ ...entry, rank: index + 1 }));
+  );
 
   useEffect(() => {
     const handleLeaderboardUpdate = (data: WebSocketMessage) => {
@@ -147,9 +194,58 @@ export function ScoreboardPanel({
     return '🏅';
   };
 
-  const currentLeaderboard =
-    activeTab === 'room' ? roomLeaderboard : globalLeaderboard;
+  useEffect(() => {
+    const newAnimatingScores = new Set<string>();
+    const currentBoard =
+      activeTab === 'room' ? roomLeaderboard : globalLeaderboard;
+
+    currentBoard.forEach((entry) => {
+      const prevEntry = currentLeaderboard.find(
+        (prev) => prev.userId === entry.userId
+      );
+      if (prevEntry && prevEntry.totalScore !== entry.totalScore) {
+        newAnimatingScores.add(entry.userId);
+      }
+    });
+
+    if (newAnimatingScores.size > 0) {
+      setAnimatingScores(newAnimatingScores);
+      setTimeout(() => setAnimatingScores(new Set()), 2000);
+    }
+  }, [roomScores, globalLeaderboard]);
+
+  const currentLeaderboard = sortLeaderboard(
+    activeTab === 'room' ? roomLeaderboard : globalLeaderboard
+  );
   const currentUserRank = getCurrentUserRank(currentLeaderboard);
+
+  const exportLeaderboard = () => {
+    const data = currentLeaderboard.map((entry) => ({
+      Rank: entry.rank,
+      User: entry.userId,
+      Score: entry.totalScore,
+      'Challenges Solved': entry.challengesSolved,
+      'Average Time (ms)': Math.round(entry.averageTime),
+      Efficiency: entry.efficiency,
+    }));
+
+    const csv = [
+      Object.keys(data[0]).join(','),
+      ...data.map((row) => Object.values(row).join(',')),
+    ].join('\n');
+
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${activeTab}-leaderboard-${
+      new Date().toISOString().split('T')[0]
+    }.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
 
   return (
     <div className="bg-cyber-surface border border-cyber-border rounded-xl shadow-lg p-6">
@@ -178,8 +274,81 @@ export function ScoreboardPanel({
           >
             🌍 Global
           </button>
+          <button
+            className={`px-3 py-2 rounded-lg text-sm transition-colors ${
+              showFilters
+                ? 'bg-cyber-yellow-500 text-cyber-bg'
+                : 'bg-cyber-surface-alt text-cyber-text-secondary hover:text-cyber-text-primary'
+            }`}
+            onClick={() => setShowFilters(!showFilters)}
+            title="Toggle filters and sorting"
+          >
+            ⚙️
+          </button>
+          <button
+            className="px-3 py-2 rounded-lg text-sm bg-cyber-surface-alt text-cyber-text-secondary hover:text-cyber-text-primary transition-colors"
+            onClick={exportLeaderboard}
+            title="Export leaderboard data"
+            disabled={currentLeaderboard.length === 0}
+          >
+            📊
+          </button>
         </div>
       </div>
+
+      {showFilters && (
+        <div className="mb-6 p-4 bg-cyber-surface-alt rounded-lg border border-cyber-border">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-cyber-text-secondary mb-2">
+                Sort by:
+              </label>
+              <select
+                value={sortBy}
+                onChange={(e) =>
+                  setSortBy(
+                    e.target.value as 'score' | 'solved' | 'efficiency' | 'time'
+                  )
+                }
+                className="w-full px-3 py-2 bg-cyber-bg border border-cyber-border rounded-md text-cyber-text-primary text-sm"
+              >
+                <option value="score">Score</option>
+                <option value="solved">Challenges Solved</option>
+                <option value="efficiency">Efficiency</option>
+                <option value="time">Average Time</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-cyber-text-secondary mb-2">
+                Order:
+              </label>
+              <select
+                value={sortOrder}
+                onChange={(e) => setSortOrder(e.target.value as 'asc' | 'desc')}
+                className="w-full px-3 py-2 bg-cyber-bg border border-cyber-border rounded-md text-cyber-text-primary text-sm"
+              >
+                <option value="desc">Highest first</option>
+                <option value="asc">Lowest first</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-cyber-text-secondary mb-2">
+                Min Score:
+              </label>
+              <input
+                type="number"
+                value={filterMinScore}
+                onChange={(e) =>
+                  setFilterMinScore(parseInt(e.target.value) || 0)
+                }
+                className="w-full px-3 py-2 bg-cyber-bg border border-cyber-border rounded-md text-cyber-text-primary text-sm"
+                placeholder="0"
+                min="0"
+              />
+            </div>
+          </div>
+        </div>
+      )}
 
       {currentUserRank && (
         <div className="bg-cyber-surface-alt border-l-4 border-cyber-cyan-500 rounded-lg p-4 mb-6 flex items-center justify-between">
@@ -239,9 +408,14 @@ export function ScoreboardPanel({
               return (
                 <div
                   key={entry.userId}
-                  className={`flex items-center justify-between bg-cyber-surface-alt border border-cyber-border rounded-lg px-4 py-3 ${
+                  className={`flex items-center justify-between bg-cyber-surface-alt border border-cyber-border rounded-lg px-4 py-3 transition-all duration-300 cursor-pointer hover:border-cyber-cyan-500/50 ${
                     isCurrentUser ? 'border-cyber-cyan-500' : ''
+                  } ${
+                    animatingScores.has(entry.userId)
+                      ? 'animate-pulse border-cyber-yellow-500'
+                      : ''
                   }`}
+                  onClick={() => setSelectedUser(entry.userId)}
                 >
                   <div className="flex items-center gap-3 min-w-0">
                     <span
@@ -349,6 +523,120 @@ export function ScoreboardPanel({
               🔄 Refresh
             </button>
           )}
+        </div>
+      )}
+
+      {selectedUser && (
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          onClick={() => setSelectedUser(null)}
+        >
+          <div
+            className="bg-cyber-surface border border-cyber-border rounded-xl p-6 max-w-md w-full mx-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-xl font-bold text-cyber-text-primary">
+                {selectedUser} Profile
+              </h3>
+              <button
+                onClick={() => setSelectedUser(null)}
+                className="text-cyber-text-secondary hover:text-cyber-text-primary transition-colors"
+              >
+                ✕
+              </button>
+            </div>
+
+            {(() => {
+              const userEntry = currentLeaderboard.find(
+                (entry) => entry.userId === selectedUser
+              );
+
+              if (!userEntry)
+                return (
+                  <p className="text-cyber-text-secondary">User not found</p>
+                );
+
+              const skill = getSkillBadge(userEntry.totalScore);
+
+              return (
+                <div className="space-y-4">
+                  <div className="flex items-center gap-3">
+                    <span className="text-2xl">
+                      {getRankIcon(userEntry.rank)}
+                    </span>
+                    <div>
+                      <div className="text-cyber-text-primary font-bold">
+                        Rank #{userEntry.rank}
+                      </div>
+                      <div
+                        className="inline-block px-2 py-1 rounded-full text-xs font-medium"
+                        style={{ backgroundColor: skill.color }}
+                      >
+                        {skill.title}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="bg-cyber-bg p-3 rounded-lg">
+                      <div className="text-cyber-text-secondary text-xs">
+                        Total Score
+                      </div>
+                      <div className="text-cyber-cyan-500 font-bold text-lg">
+                        {userEntry.totalScore.toLocaleString()}
+                      </div>
+                    </div>
+                    <div className="bg-cyber-bg p-3 rounded-lg">
+                      <div className="text-cyber-text-secondary text-xs">
+                        Challenges
+                      </div>
+                      <div className="text-cyber-text-primary font-bold text-lg">
+                        {userEntry.challengesSolved}
+                      </div>
+                    </div>
+                    <div className="bg-cyber-bg p-3 rounded-lg">
+                      <div className="text-cyber-text-secondary text-xs">
+                        Avg Time
+                      </div>
+                      <div className="text-cyber-text-primary font-bold text-lg">
+                        {formatTime(userEntry.averageTime)}
+                      </div>
+                    </div>
+                    <div className="bg-cyber-bg p-3 rounded-lg">
+                      <div className="text-cyber-text-secondary text-xs">
+                        Efficiency
+                      </div>
+                      <div className="text-cyber-text-primary font-bold text-lg">
+                        {userEntry.efficiency}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex gap-2 pt-2">
+                    <button
+                      onClick={() => {
+                        navigator.clipboard?.writeText(
+                          `${selectedUser}: Rank #${
+                            userEntry.rank
+                          } with ${userEntry.totalScore.toLocaleString()} points`
+                        );
+                      }}
+                      className="flex-1 px-3 py-2 bg-cyber-cyan-600 text-white rounded-md font-semibold hover:bg-cyber-cyan-700 transition-colors text-sm"
+                    >
+                      📋 Copy Stats
+                    </button>
+                    <button
+                      onClick={() => setSelectedUser(null)}
+                      className="px-4 py-2 bg-cyber-surface-alt text-cyber-text-secondary rounded-md hover:text-cyber-text-primary transition-colors text-sm"
+                    >
+                      Close
+                    </button>
+                  </div>
+                </div>
+              );
+            })()}
+          </div>
         </div>
       )}
     </div>
